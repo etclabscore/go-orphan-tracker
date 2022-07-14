@@ -93,14 +93,18 @@ type Head struct {
 	Nonce       string `json:"nonce"`
 	BaseFee     string `json:"baseFeePerGas"` // BaseFee was added by EIP-1559 and is ignored in legacy headers.
 
+	// Orphan is a flag indicating whether this header is an orphan.
 	Orphan bool `gorm:"default:false" json:"orphan"`
-	Uncle  bool `gorm:"default:false" json:"uncle"`
 
-	Txes []Tx `gorm:"foreignKey:HeaderHash" json:"txes"`
+	// UncleBy is the hash of the block/header listing this uncle as an uncle.
+	// If empty, it was not recorded as an uncle.
+	UncleBy string `json:"uncle_by"`
+
+	Txes []Tx `gorm:"many2many:head_txes" json:"txes"`
 }
 
 // appHeader translates the original header into a our app specific header struct type.
-func appHeader(header *types.Header, isOrphan, isUncle bool) *Head {
+func appHeader(header *types.Header, isOrphan bool, uncleRecorderHash string) *Head {
 	return &Head{
 		Hash:        header.Hash().Hex(),
 		ParentHash:  header.ParentHash.Hex(),
@@ -119,7 +123,7 @@ func appHeader(header *types.Header, isOrphan, isUncle bool) *Head {
 		Nonce:       fmt.Sprintf("%d", header.Nonce.Uint64()),
 		BaseFee:     header.BaseFee.String(),
 		Orphan:      isOrphan,
-		Uncle:       isUncle,
+		UncleBy:     uncleRecorderHash,
 	}
 }
 
@@ -140,9 +144,9 @@ func (h *Head) CreateOrUpdate(db *gorm.DB, assignCols ...string) error {
 type Tx struct {
 	gorm.Model
 
-	HeaderHash string `json:"headerHash"`
+	Heads []*Head `gorm:"many2many:head_txes" json:"heads"`
 
-	Hash     string `json:"hash"`
+	Hash     string `json:"hash" gorm:"uniqueIndex"`
 	From     string `json:"from"`
 	To       string `json:"to"`
 	Data     string `json:"data"`
@@ -291,7 +295,7 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 				return err
 			}
 
-			canonHead := appHeader(canonBlock.Header(), false, false)
+			canonHead := appHeader(canonBlock.Header(), false, "")
 
 			if err := fetchAndAssignTransactionsForHeader(canonHead); err != nil {
 				return err
@@ -321,7 +325,7 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 
 				case header := <-sideHeadCh:
 
-					sideHead := appHeader(header, true, false)
+					sideHead := appHeader(header, true, "")
 					if err := fetchAndAssignTransactionsForHeader(sideHead); err != nil {
 						log.Println(err)
 						quitCh <- os.Interrupt
@@ -350,7 +354,7 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 					return
 
 				case header := <-headCh:
-					log.Println("New head:", headerStr(appHeader(header, false, false)))
+					log.Println("New head:", headerStr(appHeader(header, false, "")))
 
 					if header.UncleHash == types.EmptyUncleHash {
 						continue
@@ -368,7 +372,7 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 					uncles := bl.Uncles()
 					for _, uncle := range uncles {
 
-						uncleHead := appHeader(uncle, false, true)
+						uncleHead := appHeader(uncle, false, bl.Hash().Hex())
 						if err := fetchAndAssignTransactionsForHeader(uncleHead); err != nil {
 							log.Println(err)
 							quitCh <- os.Interrupt
@@ -377,7 +381,7 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 
 						log.Println("New uncle:", headerStr(uncleHead))
 
-						if err := uncleHead.CreateOrUpdate(db, "uncle"); err != nil {
+						if err := uncleHead.CreateOrUpdate(db, "uncle_by"); err != nil {
 							log.Println(err)
 							quitCh <- os.Interrupt
 							return
