@@ -85,6 +85,7 @@ type Head struct {
 	BaseFee     string `json:"baseFeePerGas"` // BaseFee was added by EIP-1559 and is ignored in legacy headers.
 
 	Orphan bool `gorm:"default:false" json:"orphan"`
+	Uncle  bool `gorm:"default:false" json:"uncle"`
 }
 
 // rootCmd represents the base command when called without any subcommands
@@ -184,11 +185,11 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 				case header := <-sideHeadCh:
 					log.Println("New side head:", headerStr(header))
 
-					head := appHeader(header, true)
+					head := appHeader(header, true, false)
 
 					db.Clauses(clause.OnConflict{
 						Columns:   []clause.Column{{Name: "hash"}},
-						DoUpdates: clause.AssignmentColumns([]string{"orphan"}),
+						DoUpdates: clause.AssignmentColumns([]string{"orphan", "uncle"}),
 					}).Create(head)
 
 					// Now query and store the block by number to get the canonical block.
@@ -199,10 +200,10 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 						return
 					}
 
-					canonHead := appHeader(canonHeader, false)
+					canonHead := appHeader(canonHeader, false, false)
 					db.Clauses(clause.OnConflict{
 						Columns:   []clause.Column{{Name: "hash"}},
-						DoUpdates: clause.AssignmentColumns([]string{"orphan"}),
+						DoUpdates: clause.AssignmentColumns([]string{"orphan", "uncle"}),
 					}).Create(canonHead)
 
 					// Canons
@@ -214,6 +215,41 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 				case header := <-headCh:
 					log.Println("New head:", headerStr(header))
 
+					if header.UncleHash == types.EmptyUncleHash {
+						continue
+					}
+
+					bl, err := client.BlockByHash(context.Background(), header.Hash())
+					if err != nil {
+						log.Println(err)
+						quitCh <- os.Interrupt
+						return
+					}
+
+					uncles := bl.Uncles()
+					for _, uncle := range uncles {
+						log.Println("New uncle:", headerStr(uncle))
+						uncleHead := appHeader(uncle, false, true)
+						db.Clauses(clause.OnConflict{
+							Columns:   []clause.Column{{Name: "hash"}},
+							DoUpdates: clause.AssignmentColumns([]string{"orphan", "uncle"}),
+						}).Create(uncleHead)
+
+						// Now query and store the block by number to get the canonical headers corresponding to
+						// this uncle by height.
+						canonHeader, err := client.HeaderByNumber(context.Background(), uncle.Number)
+						if err != nil {
+							log.Println(err)
+							quitCh <- os.Interrupt
+							return
+						}
+
+						canonHead := appHeader(canonHeader, false, false)
+						db.Clauses(clause.OnConflict{
+							Columns:   []clause.Column{{Name: "hash"}},
+							DoUpdates: clause.AssignmentColumns([]string{"orphan", "uncle"}),
+						}).Create(canonHead)
+					}
 				}
 			}
 		}()
@@ -296,7 +332,7 @@ func startHttpServer(wg *sync.WaitGroup, db *gorm.DB) *http.Server {
 }
 
 // appHeader translates the original header into a our app specific header struct type.
-func appHeader(header *types.Header, isOrphan bool) *Head {
+func appHeader(header *types.Header, isOrphan, isUncle bool) *Head {
 	return &Head{
 		Hash:        header.Hash().Hex(),
 		ParentHash:  header.ParentHash.Hex(),
@@ -315,6 +351,7 @@ func appHeader(header *types.Header, isOrphan bool) *Head {
 		Nonce:       fmt.Sprintf("%d", header.Nonce.Uint64()),
 		BaseFee:     header.BaseFee.String(),
 		Orphan:      isOrphan,
+		Uncle:       isUncle,
 	}
 }
 
