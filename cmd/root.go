@@ -63,6 +63,11 @@ func init() {
 
 }
 
+// Head is our app representation of a block header.
+// We have to reinvent the wheel because we want to play nice with the database,
+// and the database doesn't have a model *big.Ints or common.Hash or block.Nonce, etc.
+// All *big.Ints are stored as strings in the database unless they are safely converted to uint64s (ie block number).
+// All common.Hashes are stored as strings.
 type Head struct {
 	gorm.Model
 
@@ -232,7 +237,8 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 						continue
 					}
 
-					// The new head has uncles. Let's query and store the uncles.
+					// The new head has uncles.
+					// First we have to get the block to get the uncles.
 					bl, err := client.BlockByHash(context.Background(), header.Hash())
 					if err != nil {
 						log.Println(err)
