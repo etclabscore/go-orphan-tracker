@@ -29,6 +29,7 @@ import (
 	"os/signal"
 	"sync"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/spf13/cobra"
@@ -46,6 +47,7 @@ import (
 var cfgFile string
 var rpcTarget string
 var dbPath string
+var chainID *big.Int
 
 func init() {
 	cobra.OnInitialize(initConfig)
@@ -93,6 +95,84 @@ type Head struct {
 
 	Orphan bool `gorm:"default:false" json:"orphan"`
 	Uncle  bool `gorm:"default:false" json:"uncle"`
+
+	Txes []Tx `gorm:"foreignKey:HeaderHash" json:"txes"`
+}
+
+// appHeader translates the original header into a our app specific header struct type.
+func appHeader(header *types.Header, isOrphan, isUncle bool) *Head {
+	return &Head{
+		Hash:        header.Hash().Hex(),
+		ParentHash:  header.ParentHash.Hex(),
+		UncleHash:   header.UncleHash.Hex(),
+		Coinbase:    header.Coinbase.Hex(),
+		Root:        header.Root.Hex(),
+		TxHash:      header.TxHash.Hex(),
+		ReceiptHash: header.ReceiptHash.Hex(),
+		Difficulty:  header.Difficulty.String(),
+		Number:      header.Number.Uint64(),
+		GasLimit:    header.GasLimit,
+		GasUsed:     header.GasUsed,
+		Time:        header.Time,
+		Extra:       header.Extra,
+		MixDigest:   header.MixDigest.Hex(),
+		Nonce:       fmt.Sprintf("%d", header.Nonce.Uint64()),
+		BaseFee:     header.BaseFee.String(),
+		Orphan:      isOrphan,
+		Uncle:       isUncle,
+	}
+}
+
+// CreateOrUpdate creates or updates a header, returning any error.
+// assignCols should be any of "uncle" or "orphan"; these are the fields which
+// are permitted to be updated in case the record already exists.
+func (h *Head) CreateOrUpdate(db *gorm.DB, assignCols ...string) error {
+	cols := []string{}
+	cols = append(cols, assignCols...)
+	res := db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "hash"}},
+		DoUpdates: clause.AssignmentColumns(cols),
+	}).Create(h)
+
+	return res.Error
+}
+
+type Tx struct {
+	gorm.Model
+
+	HeaderHash string `json:"headerHash"`
+
+	Hash     string `json:"hash"`
+	From     string `json:"from"`
+	To       string `json:"to"`
+	Data     string `json:"data"`
+	GasPrice string `json:"gasPrice"`
+	GasLimit string `json:"gasLimit"`
+	Value    string `json:"value"`
+	Nonce    uint64 `json:"nonce"`
+}
+
+func appTx(tx *types.Transaction, baseFee *big.Int) (Tx, error) {
+	to := ""
+	if tx.To() != nil {
+		to = tx.To().Hex()
+	}
+
+	msg, err := tx.AsMessage(types.NewEIP2930Signer(chainID), baseFee)
+	if err != nil {
+		return Tx{}, err
+	}
+
+	return Tx{
+		From:     msg.From().Hex(),
+		To:       to,
+		Data:     common.Bytes2Hex(tx.Data()),
+		GasPrice: tx.GasPrice().String(),
+		GasLimit: tx.GasFeeCap().String(),
+		Value:    tx.Value().String(),
+		Nonce:    tx.Nonce(),
+		Hash:     tx.Hash().Hex(),
+	}, nil
 }
 
 // rootCmd represents the base command when called without any subcommands
@@ -130,8 +210,15 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 		}
 
 		client := ethclient.NewClient(rpcClient)
-
 		log.Println("Connected client to RPC target", rpcTarget)
+
+		// Get the chainID and store in mem because we need it for transaction signer extraction.
+		chainID, err = client.ChainID(context.Background())
+		if err != nil {
+			log.Println(err)
+			os.Exit(1)
+		}
+		log.Println("Chain ID:", chainID)
 
 		// Set up the database
 		// --------------------------------------------------
@@ -147,7 +234,7 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 		}
 		db.Debug() // I love verbosity.
 
-		if err := db.AutoMigrate(&Head{}); err != nil {
+		if err := db.AutoMigrate(&Head{}, &Tx{}); err != nil {
 			log.Println(err)
 			os.Exit(1)
 		}
@@ -173,18 +260,43 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 			os.Exit(1)
 		}
 
+		// fetchAndAssignTransactionsForHeader will fetch the transactions for a given header and assign them
+		// to the struct pointer passed as an argument.
+		fetchAndAssignTransactionsForHeader := func(header *Head) error {
+			if header.Txes == nil {
+				header.Txes = []Tx{}
+			}
+			bl, err := client.BlockByHash(context.Background(), common.HexToHash(header.Hash))
+			if err != nil {
+				return err
+			}
+			for _, tx := range bl.Transactions() {
+				tx, err := appTx(tx, bl.BaseFee())
+				if err != nil {
+					return err
+				}
+				header.Txes = append(header.Txes, tx)
+			}
+			return nil
+		}
+
 		// fetchAndStoreCanonicalHeader is a convenience function to fetch and store a canonical header.
 		// This is used for both side blocks and uncle blocks, because
 		// we always want to keep records of corresponding canonical blocks for both orphans and uncles.
 		fetchAndStoreCanonicalHeader := func(number *big.Int) error {
 			// Now query and store the block by number to get the canonical headers corresponding to
 			// this uncle by height.
-			canonHeader, err := client.HeaderByNumber(context.Background(), number)
+			canonBlock, err := client.BlockByNumber(context.Background(), number)
 			if err != nil {
 				return err
 			}
 
-			canonHead := appHeader(canonHeader, false, false)
+			canonHead := appHeader(canonBlock.Header(), false, false)
+
+			if err := fetchAndAssignTransactionsForHeader(canonHead); err != nil {
+				return err
+			}
+
 			if err := canonHead.CreateOrUpdate(db, "orphan"); err != nil {
 				return err
 			}
@@ -208,10 +320,17 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 					return
 
 				case header := <-sideHeadCh:
-					log.Println("New side head:", headerStr(header))
 
-					head := appHeader(header, true, false)
-					if err := head.CreateOrUpdate(db, "orphan"); err != nil {
+					sideHead := appHeader(header, true, false)
+					if err := fetchAndAssignTransactionsForHeader(sideHead); err != nil {
+						log.Println(err)
+						quitCh <- os.Interrupt
+						continue
+					}
+
+					log.Println("New side head:", headerStr(sideHead))
+
+					if err := sideHead.CreateOrUpdate(db, "orphan"); err != nil {
 						log.Println(err)
 						quitCh <- os.Interrupt
 						return
@@ -231,7 +350,7 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 					return
 
 				case header := <-headCh:
-					log.Println("New head:", headerStr(header))
+					log.Println("New head:", headerStr(appHeader(header, false, false)))
 
 					if header.UncleHash == types.EmptyUncleHash {
 						continue
@@ -248,9 +367,16 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 
 					uncles := bl.Uncles()
 					for _, uncle := range uncles {
-						log.Println("New uncle:", headerStr(uncle))
 
 						uncleHead := appHeader(uncle, false, true)
+						if err := fetchAndAssignTransactionsForHeader(uncleHead); err != nil {
+							log.Println(err)
+							quitCh <- os.Interrupt
+							continue
+						}
+
+						log.Println("New uncle:", headerStr(uncleHead))
+
 						if err := uncleHead.CreateOrUpdate(db, "uncle"); err != nil {
 							log.Println(err)
 							quitCh <- os.Interrupt
@@ -302,13 +428,13 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 	},
 }
 
-func headerStr(header *types.Header) string {
+func headerStr(header *Head) string {
 	hasUncles := "no"
-	if header.UncleHash != types.EmptyUncleHash {
+	if common.HexToHash(header.UncleHash) != types.EmptyUncleHash {
 		hasUncles = "yes"
 	}
-	return fmt.Sprintf(`n=%d t=%d hash=%s parent=%s miner=%s uncles=%s`,
-		header.Number.Uint64(), header.Time, header.Hash().Hex(), header.ParentHash.Hex(), header.Coinbase.Hex(), hasUncles)
+	return fmt.Sprintf(`n=%d t=%d hash=%s parent=%s miner=%s uncles=%s txes=%d`,
+		header.Number, header.Time, header.Hash, header.ParentHash, header.Coinbase, hasUncles, len(header.Txes))
 }
 
 func pingHandler(w http.ResponseWriter, r *http.Request) {
@@ -325,7 +451,7 @@ func startHttpServer(wg *sync.WaitGroup, db *gorm.DB) *http.Server {
 	r.Handle("/ping", handlers.LoggingHandler(os.Stderr, http.HandlerFunc(pingHandler)))
 	r.Handle("/api", handlers.LoggingHandler(os.Stderr, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		heads := []*Head{}
-		res := db.Find(&heads)
+		res := db.Model(&Head{}).Preload("Txes").Find(&heads)
 		if res.Error != nil {
 			log.Println(res.Error)
 			http.Error(w, res.Error.Error(), http.StatusInternalServerError)
@@ -358,41 +484,6 @@ func startHttpServer(wg *sync.WaitGroup, db *gorm.DB) *http.Server {
 
 	// returning reference so caller can call Shutdown()
 	return srv
-}
-
-// appHeader translates the original header into a our app specific header struct type.
-func appHeader(header *types.Header, isOrphan, isUncle bool) *Head {
-	return &Head{
-		Hash:        header.Hash().Hex(),
-		ParentHash:  header.ParentHash.Hex(),
-		UncleHash:   header.UncleHash.Hex(),
-		Coinbase:    header.Coinbase.Hex(),
-		Root:        header.Root.Hex(),
-		TxHash:      header.TxHash.Hex(),
-		ReceiptHash: header.ReceiptHash.Hex(),
-		Difficulty:  header.Difficulty.String(),
-		Number:      header.Number.Uint64(),
-		GasLimit:    header.GasLimit,
-		GasUsed:     header.GasUsed,
-		Time:        header.Time,
-		Extra:       header.Extra,
-		MixDigest:   header.MixDigest.Hex(),
-		Nonce:       fmt.Sprintf("%d", header.Nonce.Uint64()),
-		BaseFee:     header.BaseFee.String(),
-		Orphan:      isOrphan,
-		Uncle:       isUncle,
-	}
-}
-
-func (h *Head) CreateOrUpdate(db *gorm.DB, assignCols ...string) error {
-	cols := []string{}
-	cols = append(cols, assignCols...)
-	res := db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "hash"}},
-		DoUpdates: clause.AssignmentColumns(cols),
-	}).Create(h)
-
-	return res.Error
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
