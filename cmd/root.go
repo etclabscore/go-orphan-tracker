@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/big"
 	"net/http"
 	"os"
 	"os/signal"
@@ -167,6 +168,24 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 			os.Exit(1)
 		}
 
+		// fetchAndStoreCanonicalHeader is a convenience function to fetch and store a canonical header.
+		// This is used for both side blocks and uncle blocks, because
+		// we always want to keep records of corresponding canonical blocks for both orphans and uncles.
+		fetchAndStoreCanonicalHeader := func(number *big.Int) error {
+			// Now query and store the block by number to get the canonical headers corresponding to
+			// this uncle by height.
+			canonHeader, err := client.HeaderByNumber(context.Background(), number)
+			if err != nil {
+				return err
+			}
+
+			canonHead := appHeader(canonHeader, false, false)
+			if err := canonHead.CreateOrUpdate(db, "orphan"); err != nil {
+				return err
+			}
+			return nil
+		}
+
 		// Run the main loop.
 		// --------------------------------------------------
 		go func() {
@@ -187,22 +206,14 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 					log.Println("New side head:", headerStr(header))
 
 					head := appHeader(header, true, false)
-					if err := head.CreateOrUpdate(db); err != nil {
+					if err := head.CreateOrUpdate(db, "orphan"); err != nil {
 						log.Println(err)
 						quitCh <- os.Interrupt
 						return
 					}
 
 					// Now query and store the block by number to get the canonical block.
-					canonHeader, err := client.HeaderByNumber(context.Background(), header.Number)
-					if err != nil {
-						log.Println(err)
-						quitCh <- os.Interrupt
-						return
-					}
-
-					canonHead := appHeader(canonHeader, false, false)
-					if err := canonHead.CreateOrUpdate(db); err != nil {
+					if err := fetchAndStoreCanonicalHeader(header.Number); err != nil {
 						log.Println(err)
 						quitCh <- os.Interrupt
 						return
@@ -221,6 +232,7 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 						continue
 					}
 
+					// The new head has uncles. Let's query and store the uncles.
 					bl, err := client.BlockByHash(context.Background(), header.Hash())
 					if err != nil {
 						log.Println(err)
@@ -233,7 +245,7 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 						log.Println("New uncle:", headerStr(uncle))
 
 						uncleHead := appHeader(uncle, false, true)
-						if err := uncleHead.CreateOrUpdate(db); err != nil {
+						if err := uncleHead.CreateOrUpdate(db, "uncle"); err != nil {
 							log.Println(err)
 							quitCh <- os.Interrupt
 							return
@@ -241,15 +253,7 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 
 						// Now query and store the block by number to get the canonical headers corresponding to
 						// this uncle by height.
-						canonHeader, err := client.HeaderByNumber(context.Background(), uncle.Number)
-						if err != nil {
-							log.Println(err)
-							quitCh <- os.Interrupt
-							return
-						}
-
-						canonHead := appHeader(canonHeader, false, false)
-						if err := canonHead.CreateOrUpdate(db); err != nil {
+						if err := fetchAndStoreCanonicalHeader(uncle.Number); err != nil {
 							log.Println(err)
 							quitCh <- os.Interrupt
 							return
@@ -370,10 +374,12 @@ func appHeader(header *types.Header, isOrphan, isUncle bool) *Head {
 	}
 }
 
-func (h *Head) CreateOrUpdate(db *gorm.DB) error {
+func (h *Head) CreateOrUpdate(db *gorm.DB, assignCols ...string) error {
+	cols := []string{}
+	cols = append(cols, assignCols...)
 	res := db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "hash"}},
-		DoUpdates: clause.AssignmentColumns([]string{"orphan", "uncle"}),
+		DoUpdates: clause.AssignmentColumns(cols),
 	}).Create(h)
 
 	return res.Error
