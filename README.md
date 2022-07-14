@@ -43,6 +43,10 @@ The Sqlite3 database schema is as follows:
   These transactions are contained in either an uncle and/or orphan block.
 - `head_txes` This table is a join table which relates the `txes` table to the `heads` table as a many-to-many relation.
 
+Fields which are natively `common.Hash` or `*big.Int` or other "specialty" fields (`BlockNonce`) are coerced to (usually) `string` or sometimes `uint64` if I'm sure they won't overflow. `common.Hash` values will be stored hex-encoded, while `*big.Int` values are stored as numerical strings (via the `*big.Int.String()` method). 
+
+![image](https://user-images.githubusercontent.com/45600330/179063477-56d21c7b-55e5-470c-8d69-433dc8f8f3e8.png)
+
 ## API
 
 - `/ping` This endpoint returns `pong` if the server is running.
