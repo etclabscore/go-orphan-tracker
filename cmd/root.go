@@ -65,7 +65,7 @@ type Head struct {
 	Time        uint64 `json:"timestamp"`
 	Extra       []byte `json:"extraData"`
 	MixDigest   string `json:"mixHash"`
-	Nonce       uint64 `json:"nonce"`
+	Nonce       string `json:"nonce"`
 	BaseFee     string `json:"baseFeePerGas"` // BaseFee was added by EIP-1559 and is ignored in legacy headers.
 
 	Orphan bool `gorm:"default:false",json:"orphan"`
@@ -287,7 +287,7 @@ func appHeader(header *types.Header, isOrphan bool) *Head {
 		Time:        header.Time,
 		Extra:       header.Extra,
 		MixDigest:   header.MixDigest.Hex(),
-		Nonce:       header.Nonce.Uint64(),
+		Nonce:       fmt.Sprintf("%d", header.Nonce.Uint64()),
 		BaseFee:     header.BaseFee.String(),
 		Orphan:      isOrphan,
 	}
