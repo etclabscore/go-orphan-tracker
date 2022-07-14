@@ -320,7 +320,11 @@ func startHttpServer(wg *sync.WaitGroup, db *gorm.DB) *http.Server {
 	r.Handle("/api", handlers.LoggingHandler(os.Stderr, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		heads := []*Head{}
 		res := db.Find(&heads)
-		log.Printf(`Found %d heads, error: %v`, res.RowsAffected, res.Error)
+		if res.Error != nil {
+			log.Println(res.Error)
+			http.Error(w, res.Error.Error(), http.StatusInternalServerError)
+			return
+		}
 
 		j, err := json.MarshalIndent(heads, "", "  ")
 		if err != nil {
