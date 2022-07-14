@@ -49,7 +49,7 @@ type Head struct {
 	gorm.Model
 
 	// Hash is the SAME VALUE as Header.Hash(), but we get to tell gorm that it must be unique.
-	Hash string `gorm:"uniqueIndex",json:"hash"`
+	Hash string `gorm:"uniqueIndex" json:"hash"`
 
 	// types.Header:
 	ParentHash  string `json:"parentHash"`
@@ -68,7 +68,7 @@ type Head struct {
 	Nonce       string `json:"nonce"`
 	BaseFee     string `json:"baseFeePerGas"` // BaseFee was added by EIP-1559 and is ignored in legacy headers.
 
-	Orphan bool `gorm:"default:false",json:"orphan"`
+	Orphan bool `gorm:"default:false" json:"orphan"`
 }
 
 // rootCmd represents the base command when called without any subcommands
