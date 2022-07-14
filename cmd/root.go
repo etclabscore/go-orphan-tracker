@@ -38,6 +38,7 @@ import (
 	homedir "github.com/mitchellh/go-homedir"
 	"github.com/spf13/viper"
 
+	"github.com/gorilla/handlers"
 	"gorm.io/gorm"
 )
 
@@ -186,11 +187,11 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 					log.Println("New side head:", headerStr(header))
 
 					head := appHeader(header, true, false)
-
-					db.Clauses(clause.OnConflict{
-						Columns:   []clause.Column{{Name: "hash"}},
-						DoUpdates: clause.AssignmentColumns([]string{"orphan", "uncle"}),
-					}).Create(head)
+					if err := head.CreateOrUpdate(db); err != nil {
+						log.Println(err)
+						quitCh <- os.Interrupt
+						return
+					}
 
 					// Now query and store the block by number to get the canonical block.
 					canonHeader, err := client.HeaderByNumber(context.Background(), header.Number)
@@ -201,10 +202,11 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 					}
 
 					canonHead := appHeader(canonHeader, false, false)
-					db.Clauses(clause.OnConflict{
-						Columns:   []clause.Column{{Name: "hash"}},
-						DoUpdates: clause.AssignmentColumns([]string{"orphan", "uncle"}),
-					}).Create(canonHead)
+					if err := canonHead.CreateOrUpdate(db); err != nil {
+						log.Println(err)
+						quitCh <- os.Interrupt
+						return
+					}
 
 					// Canons
 				case err := <-headSub.Err():
@@ -229,11 +231,13 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 					uncles := bl.Uncles()
 					for _, uncle := range uncles {
 						log.Println("New uncle:", headerStr(uncle))
+
 						uncleHead := appHeader(uncle, false, true)
-						db.Clauses(clause.OnConflict{
-							Columns:   []clause.Column{{Name: "hash"}},
-							DoUpdates: clause.AssignmentColumns([]string{"orphan", "uncle"}),
-						}).Create(uncleHead)
+						if err := uncleHead.CreateOrUpdate(db); err != nil {
+							log.Println(err)
+							quitCh <- os.Interrupt
+							return
+						}
 
 						// Now query and store the block by number to get the canonical headers corresponding to
 						// this uncle by height.
@@ -245,10 +249,11 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 						}
 
 						canonHead := appHeader(canonHeader, false, false)
-						db.Clauses(clause.OnConflict{
-							Columns:   []clause.Column{{Name: "hash"}},
-							DoUpdates: clause.AssignmentColumns([]string{"orphan", "uncle"}),
-						}).Create(canonHead)
+						if err := canonHead.CreateOrUpdate(db); err != nil {
+							log.Println(err)
+							quitCh <- os.Interrupt
+							return
+						}
 					}
 				}
 			}
@@ -292,16 +297,19 @@ func headerStr(header *types.Header) string {
 		header.Number.Uint64(), header.Time, header.Hash().Hex(), header.ParentHash.Hex(), header.Coinbase.Hex())
 }
 
+func pingHandler(w http.ResponseWriter, r *http.Request) {
+	w.Write([]byte("pong"))
+}
+
 // startHttpServer is copy-pasted from https://stackoverflow.com/a/42533360.
 // It allows us to gracefully shutdown the server when the program is interrupted or killed.
 func startHttpServer(wg *sync.WaitGroup, db *gorm.DB) *http.Server {
 	srv := &http.Server{Addr: ":8080"}
 
-	http.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("pong"))
-	})
+	r := http.NewServeMux()
 
-	http.HandleFunc("/api", func(w http.ResponseWriter, r *http.Request) {
+	r.Handle("/ping", handlers.LoggingHandler(os.Stderr, http.HandlerFunc(pingHandler)))
+	r.Handle("/api", handlers.LoggingHandler(os.Stderr, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		heads := []*Head{}
 		res := db.Find(&heads)
 		log.Printf(`Found %d heads, error: %v`, res.RowsAffected, res.Error)
@@ -314,7 +322,10 @@ func startHttpServer(wg *sync.WaitGroup, db *gorm.DB) *http.Server {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(j)
-	})
+	})))
+
+	srv.Handler = r
+
 	go func() {
 		defer wg.Done() // let main know we are done cleaning up
 
@@ -353,6 +364,15 @@ func appHeader(header *types.Header, isOrphan, isUncle bool) *Head {
 		Orphan:      isOrphan,
 		Uncle:       isUncle,
 	}
+}
+
+func (h *Head) CreateOrUpdate(db *gorm.DB) error {
+	res := db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "hash"}},
+		DoUpdates: clause.AssignmentColumns([]string{"orphan", "uncle"}),
+	}).Create(h)
+
+	return res.Error
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
