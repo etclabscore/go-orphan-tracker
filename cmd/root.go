@@ -293,8 +293,12 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 }
 
 func headerStr(header *types.Header) string {
-	return fmt.Sprintf(`n=%d t=%d hash=%s parent=%s miner=%s`,
-		header.Number.Uint64(), header.Time, header.Hash().Hex(), header.ParentHash.Hex(), header.Coinbase.Hex())
+	hasUncles := "no"
+	if header.UncleHash != types.EmptyUncleHash {
+		hasUncles = "yes"
+	}
+	return fmt.Sprintf(`n=%d t=%d hash=%s parent=%s miner=%s uncles=%s`,
+		header.Number.Uint64(), header.Time, header.Hash().Hex(), header.ParentHash.Hex(), header.Coinbase.Hex(), hasUncles)
 }
 
 func pingHandler(w http.ResponseWriter, r *http.Request) {
