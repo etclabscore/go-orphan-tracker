@@ -259,6 +259,8 @@ func startHttpServer(wg *sync.WaitGroup, db *gorm.DB) *http.Server {
 	go func() {
 		defer wg.Done() // let main know we are done cleaning up
 
+		log.Println("Starting HTTP server...", srv.Addr)
+
 		// always returns error. ErrServerClosed on graceful close
 		if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 			// unexpected error. port in use?
