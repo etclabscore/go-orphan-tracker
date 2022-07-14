@@ -51,3 +51,6 @@ Fields which are natively `common.Hash` or `*big.Int` or other "specialty" field
 
 - `/ping` This endpoint returns `pong` if the server is running.
 - `/api` This endpoint returns all stored block information, with any associated transactions nested.
+
+![image](https://user-images.githubusercontent.com/45600330/179065843-e8eec559-ba8a-415c-b24d-67d0bf49bfed.png)
+
