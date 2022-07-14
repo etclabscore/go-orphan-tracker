@@ -45,6 +45,22 @@ var cfgFile string
 var rpcTarget string
 var dbPath string
 
+func init() {
+	cobra.OnInitialize(initConfig)
+
+	// Here you will define your flags and configuration settings.
+	// Cobra supports persistent flags, which, if defined here,
+	// will be global for your application.
+
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.go-orphan-tracker.yaml)")
+
+	// Cobra also supports local flags, which will only run
+	// when this action is called directly.
+	rootCmd.Flags().StringVar(&rpcTarget, "rpc.target", "", "RPC target endpoint, eg. /path/to/geth.ipc")
+	rootCmd.Flags().StringVar(&dbPath, "db.path", "", "Path to database file, eg. /path/to/db.sqlite")
+
+}
+
 type Head struct {
 	gorm.Model
 
@@ -74,13 +90,20 @@ type Head struct {
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "go-orphan-tracker",
-	Short: "A brief description of your application",
-	Long: `A longer description that spans multiple lines and likely contains
-examples and usage of using your application. For example:
+	Short: "A program to record orphan (non-canonical) ETH/ETC blocks",
+	Long: `This program creates a database of orphan blocks and their canonical counterparts.
 
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+This program demands the configured RPC endpoint to support subscriptions; either a Websocket or IPC endpoint must be used.
+*** RPC HTTP transport is not supported. ***
+
+eth_subscribeNewSideHeads is used to subscribe to new side block events.
+*** ONLY github.com/etclabscore/core-geth supports this API method. ***
+
+When a new side block event happens, the reported side block is recorded in the database.
+Its canonical counterpart is queried via eth_getHeaderByNumber and that header too is stored in the database.
+
+eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for status logging.
+`,
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
 	Run: func(cmd *cobra.Command, args []string) {
@@ -302,22 +325,6 @@ func Execute() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-}
-
-func init() {
-	cobra.OnInitialize(initConfig)
-
-	// Here you will define your flags and configuration settings.
-	// Cobra supports persistent flags, which, if defined here,
-	// will be global for your application.
-
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.go-orphan-tracker.yaml)")
-
-	// Cobra also supports local flags, which will only run
-	// when this action is called directly.
-	rootCmd.Flags().StringVar(&rpcTarget, "rpc.target", "", "RPC target endpoint, eg. /path/to/geth.ipc")
-	rootCmd.Flags().StringVar(&dbPath, "db.path", "", "Path to database file, eg. /path/to/db.sqlite")
-
 }
 
 // initConfig reads in config file and ENV variables if set.
