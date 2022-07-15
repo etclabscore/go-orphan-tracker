@@ -421,10 +421,24 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 
 				case header := <-headCh:
 					latestHead := appHeader(header, false, "")
+
 					log.Println("New head:", headerStr(latestHead))
 					statusLatestHead = latestHead
 
 					if header.UncleHash == types.EmptyUncleHash {
+						continue
+					}
+
+					// Let's keep a copy of all blocks that include uncles as well,
+					// since we name them with the uncleBy annotation for sometimes-sidechained headers.
+					if err := fetchAndAssignTransactionsForHeader(latestHead); err != nil {
+						log.Println(err)
+						quitCh <- os.Interrupt
+						continue
+					}
+					if err := latestHead.CreateOrUpdate(db, "orphan"); err != nil {
+						log.Println(err)
+						quitCh <- os.Interrupt
 						continue
 					}
 
