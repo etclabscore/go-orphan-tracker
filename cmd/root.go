@@ -48,6 +48,7 @@ import (
 var cfgFile string
 var rpcTarget string
 var dbPath string
+var httpAddr string
 var chainID *big.Int
 
 func init() {
@@ -63,6 +64,7 @@ func init() {
 	// when this action is called directly.
 	rootCmd.Flags().StringVar(&rpcTarget, "rpc.target", "", "RPC target endpoint, eg. /path/to/geth.ipc")
 	rootCmd.Flags().StringVar(&dbPath, "db.path", "", "Path to database file, eg. /path/to/db.sqlite")
+	rootCmd.Flags().StringVar(&httpAddr, "http.addr", ":8080", "Address to serve HTTP API on, eg. :8080")
 
 }
 
@@ -538,7 +540,7 @@ func statusHandler(w http.ResponseWriter, r *http.Request) {
 // startHttpServer is copy-pasted from https://stackoverflow.com/a/42533360.
 // It allows us to gracefully shutdown the server when the program is interrupted or killed.
 func startHttpServer(wg *sync.WaitGroup, db *gorm.DB) *http.Server {
-	srv := &http.Server{Addr: ":8080"}
+	srv := &http.Server{Addr: httpAddr}
 
 	r := http.NewServeMux()
 
