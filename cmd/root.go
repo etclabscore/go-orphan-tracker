@@ -28,17 +28,17 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
+	homedir "github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm/clause"
-
-	"github.com/ethereum/go-ethereum/ethclient"
-	homedir "github.com/mitchellh/go-homedir"
-	"github.com/spf13/viper"
 
 	"github.com/gorilla/handlers"
 	"gorm.io/gorm"
@@ -71,17 +71,42 @@ func init() {
 // All *big.Ints are stored as strings in the database unless they are safely converted to uint64s (ie block number).
 // All common.Hashes are stored as strings.
 type Head struct {
-	gorm.Model
+
+	// These field are taken from gorm.Model, but omitting the ID field. We'll use Hash instead.
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	DeletedAt gorm.DeletedAt `gorm:"index"`
 
 	// Hash is the SAME VALUE as Header.Hash(), but we get to tell gorm that it must be unique.
-	Hash string `gorm:"uniqueIndex" json:"hash"`
+	Hash string `gorm:"unique;index;primaryKey;" json:"hash"`
+
+	/*
+		> https://gorm.io/docs/many_to_many.html#Override-Foreign-Key
+
+		type User struct {
+		  gorm.Model
+		  Profiles []Profile `gorm:"many2many:user_profiles;foreignKey:Refer;joinForeignKey:UserReferID;References:UserRefer;joinReferences:ProfileRefer"`
+		  Refer    uint      `gorm:"index:,unique"`
+		}
+
+		type Profile struct {
+		  gorm.Model
+		  Name      string
+		  UserRefer uint `gorm:"index:,unique"`
+		}
+
+		// Which creates join table: user_profiles
+		//   foreign key: user_refer_id, reference: users.refer
+		//   foreign key: profile_refer, reference: profiles.user_refer
+	*/
+	Txes []Tx `gorm:"many2many:head_txes;foreignKey:Hash;references:Hash" json:"txes"`
 
 	// types.Header:
 	ParentHash  string `json:"parentHash"`
 	UncleHash   string `json:"sha3Uncles"`
 	Coinbase    string `json:"miner"`
 	Root        string `json:"stateRoot"`
-	TxHash      string `json:"transactionsRoot"`
+	TxHash      string `json:"transactionsRoot" gorm:"column:txes_root"`
 	ReceiptHash string `json:"receiptsRoot"`
 	Difficulty  string `json:"difficulty"`
 	Number      uint64 `json:"number"`
@@ -98,10 +123,33 @@ type Head struct {
 
 	// UncleBy is the hash of the block/header listing this uncle as an uncle.
 	// If empty, it was not recorded as an uncle.
-	UncleBy string `json:"uncle_by"`
-
-	Txes []Tx `gorm:"many2many:head_txes" json:"txes"`
+	UncleBy string `json:"uncleBy"`
 }
+
+type Tx struct {
+	// These field are taken from gorm.Model, but omitting the ID field. We'll use Hash instead.
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	DeletedAt gorm.DeletedAt `gorm:"index"`
+
+	Heads []*Head `gorm:"many2many:head_txes;foreignKey:Hash;references:Hash" json:"-"`
+
+	Hash     string `json:"hash" gorm:"unique;index;primaryKey"`
+	From     string `json:"from"`
+	To       string `json:"to"`
+	Data     string `json:"data"`
+	GasPrice string `json:"gasPrice"`
+	GasLimit string `json:"gasLimit"`
+	Value    string `json:"value"`
+	Nonce    uint64 `json:"nonce"`
+}
+
+// type HeadTx struct {
+// 	HeadHash  string `json:"head_hash" gorm:"primaryKey"`
+// 	TxHash    string `json:"tx_hash" gorm:"primaryKey"`
+// 	CreatedAt time.Time
+// 	DeletedAt gorm.DeletedAt
+// }
 
 // appHeader translates the original header into a our app specific header struct type.
 func appHeader(header *types.Header, isOrphan bool, uncleRecorderHash string) *Head {
@@ -133,27 +181,37 @@ func appHeader(header *types.Header, isOrphan bool, uncleRecorderHash string) *H
 func (h *Head) CreateOrUpdate(db *gorm.DB, assignCols ...string) error {
 	cols := []string{}
 	cols = append(cols, assignCols...)
-	res := db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "hash"}},
-		DoUpdates: clause.AssignmentColumns(cols),
-	}).Create(h)
+	res := db.
+		// Session(&gorm.Session{FullSaveAssociations: true}).
+		Clauses(
+			clause.OnConflict{
+				Columns:   []clause.Column{{Table: "heads", Name: "hash"}},
+				DoUpdates: clause.AssignmentColumns(cols),
+				// UpdateAll: true,
+			},
+			// clause.OnConflict{
+			// 	Columns:   []clause.Column{{Table: "tx", Name: "hash"}},
+			// 	UpdateAll: true,
+			// },
+		).Create(h)
+
+	if res.Error != nil {
+		return res.Error
+	}
+
+	for txi, tx := range h.Txes {
+		tx.Heads = []*Head{h}
+		h.Txes[txi] = tx
+	}
+	res = db.
+		Clauses(
+			clause.OnConflict{
+				Columns:   []clause.Column{{Table: "txes", Name: "hash"}},
+				UpdateAll: true,
+			},
+		).Create(&h.Txes)
 
 	return res.Error
-}
-
-type Tx struct {
-	gorm.Model
-
-	Heads []*Head `gorm:"many2many:head_txes" json:"heads"`
-
-	Hash     string `json:"hash" gorm:"uniqueIndex"`
-	From     string `json:"from"`
-	To       string `json:"to"`
-	Data     string `json:"data"`
-	GasPrice string `json:"gasPrice"`
-	GasLimit string `json:"gasLimit"`
-	Value    string `json:"value"`
-	Nonce    uint64 `json:"nonce"`
 }
 
 func appTx(tx *types.Transaction, baseFee *big.Int) (Tx, error) {
@@ -381,7 +439,7 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 
 						log.Println("New uncle:", headerStr(uncleHead))
 
-						if err := uncleHead.CreateOrUpdate(db, "uncle_by"); err != nil {
+						if err := uncleHead.CreateOrUpdate(db, "uncleBy"); err != nil {
 							log.Println(err)
 							quitCh <- os.Interrupt
 							return
@@ -433,12 +491,16 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 }
 
 func headerStr(header *Head) string {
-	hasUncles := "no"
-	if common.HexToHash(header.UncleHash) != types.EmptyUncleHash {
-		hasUncles = "yes"
-	}
-	return fmt.Sprintf(`n=%d t=%d hash=%s parent=%s miner=%s uncles=%s txes=%d`,
-		header.Number, header.Time, header.Hash, header.ParentHash, header.Coinbase, hasUncles, len(header.Txes))
+
+	j, _ := json.Marshal(header)
+	return string(j)
+
+	// hasUncles := "no"
+	// if common.HexToHash(header.UncleHash) != types.EmptyUncleHash {
+	// 	hasUncles = "yes"
+	// }
+	// return fmt.Sprintf(`n=%d t=%d hash=%s parent=%s miner=%s uncles=%s txes=%d`,
+	// 	header.Number, header.Time, header.Hash, header.ParentHash, header.Coinbase, hasUncles, len(header.Txes))
 }
 
 func pingHandler(w http.ResponseWriter, r *http.Request) {

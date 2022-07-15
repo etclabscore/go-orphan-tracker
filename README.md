@@ -37,7 +37,7 @@ The Sqlite3 database schema is as follows:
 - `heads` This table contains block header information (height, hash, timestamp, etc.).
   It is used to track the sidechain and uncle progress of the blockchain.
   - Entries will fill the boolean `orphan` field as `true` if they are sidechain (non-canonical) blocks.
-  - Entries will fill the string `uncle_by` field with the block/header hash of the block/header recording this block as an uncle.
+  - Entries will fill the string `uncleBy` field with the block/header hash of the block/header recording this block as an uncle.
     The field will be empty if the block is not recorded as an uncle.
 - `txes` This table contains transactions information (hash, from, to, value, etc.).
   These transactions are contained in either an uncle and/or orphan block.
