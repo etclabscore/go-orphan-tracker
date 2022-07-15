@@ -199,17 +199,21 @@ func (h *Head) CreateOrUpdate(db *gorm.DB, assignCols ...string) error {
 		return res.Error
 	}
 
+	if h.Txes == nil || len(h.Txes) == 0 {
+		return nil
+	}
+
 	for txi, tx := range h.Txes {
 		tx.Heads = []*Head{h}
 		h.Txes[txi] = tx
 	}
-	res = db.
-		Clauses(
-			clause.OnConflict{
-				Columns:   []clause.Column{{Table: "txes", Name: "hash"}},
-				UpdateAll: true,
-			},
-		).Create(&h.Txes)
+
+	res = db.Clauses(
+		clause.OnConflict{
+			Columns:   []clause.Column{{Table: "txes", Name: "hash"}},
+			UpdateAll: true,
+		},
+	).Create(&h.Txes)
 
 	return res.Error
 }
