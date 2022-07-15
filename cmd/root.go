@@ -439,7 +439,7 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 
 						log.Println("New uncle:", headerStr(uncleHead))
 
-						if err := uncleHead.CreateOrUpdate(db, "uncleBy"); err != nil {
+						if err := uncleHead.CreateOrUpdate(db, "uncle_by"); err != nil {
 							log.Println(err)
 							quitCh <- os.Interrupt
 							return
