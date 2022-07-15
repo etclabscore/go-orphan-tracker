@@ -18,8 +18,8 @@ import (
 )
 
 // generateMockHead generates a fake head.
-func generateMockHead() *Head {
-	h := &Head{}
+func generateMockHead() *Header {
+	h := &Header{}
 	h.Number = uint64(mrand.Int63n(1000000))
 	h.Difficulty = fmt.Sprintf("%d", mrand.Int63())
 
@@ -84,7 +84,7 @@ func TestHeadCreateOrUpdateWithTxes(t *testing.T) {
 	}
 	db.Debug() // I love verbosity.
 
-	if err := db.AutoMigrate(&Head{}, &Tx{}); err != nil {
+	if err := db.AutoMigrate(&Header{}, &Tx{}); err != nil {
 		log.Println(err)
 		os.Exit(1)
 	}
@@ -105,14 +105,14 @@ func TestHeadCreateOrUpdateWithTxes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	outH1 := Head{}
-	db.Model(Head{}).Preload("Txes").Where("hash = ?", head1.Hash).First(&outH1)
+	outH1 := Header{}
+	db.Model(Header{}).Preload("Txes").Where("hash = ?", head1.Hash).First(&outH1)
 
 	j, _ := json.MarshalIndent(outH1, "", "  ")
 	t.Log(string(j))
 
-	outH2 := Head{}
-	db.Model(Head{}).Preload("Txes").Where("hash = ?", head2.Hash).First(&outH2)
+	outH2 := Header{}
+	db.Model(Header{}).Preload("Txes").Where("hash = ?", head2.Hash).First(&outH2)
 
 	j, _ = json.MarshalIndent(outH2, "", "  ")
 	t.Log(string(j))

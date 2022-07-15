@@ -34,14 +34,14 @@ mkdir -p data
 
 The Sqlite3 database schema is as follows:
 
-- `heads` This table contains block header information (height, hash, timestamp, etc.).
+- `headers` This table contains block header information (height, hash, timestamp, etc.).
   It is used to track the sidechain and uncle progress of the blockchain.
   - Entries will fill the boolean `orphan` field as `true` if they are sidechain (non-canonical) blocks.
   - Entries will fill the string `uncleBy` field with the block/header hash of the block/header recording this block as an uncle.
     The field will be empty if the block is not recorded as an uncle.
 - `txes` This table contains transactions information (hash, from, to, value, etc.).
   These transactions are contained in either an uncle and/or orphan block.
-- `head_txes` This table is a join table which relates the `txes` table to the `heads` table as a many-to-many relation.
+- `header_txes` This table is a join table which relates the `txes` table to the `headers` table as a many-to-many relation.
 
 Fields which are natively `common.Hash` or `common.Address` or `*big.Int` or other "specialty" fields (`BlockNonce`) are coerced to (usually) `string` or sometimes `uint64` if I'm sure they won't overflow. `common.Hash` and `common.Address` values will be stored hex-encoded, while `*big.Int` values are stored as numerical strings (via the `*big.Int.String()` method). 
 
@@ -55,11 +55,11 @@ There is a live server running this program at [classic.orphans.etccore.in](http
 
 - [https://classic.orphans.etccore.in/ping](https://classic.orphans.etccore.in/ping)
 - [https://classic.orphans.etccore.in/status](https://classic.orphans.etccore.in/status)
-- [https://classic.orphans.etccore.in/api/heads](https://classic.orphans.etccore.in/api/heads)
-- [https://classic.orphans.etccore.in/api/heads?orphan_only=true](https://classic.orphans.etccore.in/api/heads?orphan_only=true)
-- [https://classic.orphans.etccore.in/api/heads?orphan_only=true&include_txes=false](https://classic.orphans.etccore.in/api/heads?orphan_only=true&include_txes=false)
-- [https://classic.orphans.etccore.in/api/heads?orphan_only=true&include_txes=false&limit=1&offset=1](https://classic.orphans.etccore.in/api/heads?orphan_only=true&include_txes=false&limit=1&offset=1)
-- [https://classic.orphans.etccore.in/api/heads?raw_sql=SELECT * FROM heads WHERE number > 15537020 AND number < 15537055 AND orphan == true](https://classic.orphans.etccore.in/api/heads?raw_sql=SELECT%20*%20FROM%20heads%20WHERE%20number%20%3E%2015537020%20AND%20number%20%3C%2015537055%20AND%20orphan%20==%20true)
+- [https://classic.orphans.etccore.in/api/headers](https://classic.orphans.etccore.in/api/headers)
+- [https://classic.orphans.etccore.in/api/headers?orphan_only=true](https://classic.orphans.etccore.in/api/headers?orphan_only=true)
+- [https://classic.orphans.etccore.in/api/headers?orphan_only=true&include_txes=false](https://classic.orphans.etccore.in/api/headers?orphan_only=true&include_txes=false)
+- [https://classic.orphans.etccore.in/api/headers?orphan_only=true&include_txes=false&limit=1&offset=1](https://classic.orphans.etccore.in/api/headers?orphan_only=true&include_txes=false&limit=1&offset=1)
+- [https://classic.orphans.etccore.in/api/headers?raw_sql=SELECT * FROM headers WHERE number > 15537020 AND number < 15537055 AND orphan == true](https://classic.orphans.etccore.in/api/headers?raw_sql=SELECT%20*%20FROM%20headers%20WHERE%20number%20%3E%2015537020%20AND%20number%20%3C%2015537055%20AND%20orphan%20==%20true)
 
 ### Endpoints
 
@@ -77,7 +77,7 @@ Example response:
 {
   "uptime": 324,
   "chain_id": 61,
-  "latest_head": {
+  "latest_header": {
         "created_at": "0001-01-01T00:00:00Z",
         "updated_at": "0001-01-01T00:00:00Z",
         "hash": "0x4018a7851f87ac7c7c7da1549aa11717979acaaef8937e67b1db3a573e5df29a",
@@ -102,17 +102,17 @@ Example response:
 }
 ```
 
-#### `/api/heads` 
+#### `/api/headers` 
 
 This endpoint returns all stored block information, with any associated transactions nested. The default behavior will return all blocks and their transactions nested, and the blocks will be in descending order by number.
 
-__Kitchen Sink example:__ [https://classic.orphans.etccore.in/api?limit=1&offset=1&orphan_only=true&include_txes=false](https://classic.orphans.etccore.in/api?limit=1&offset=1&orphan_only=true&include_txes=false)
+__Kitchen Sink example:__ [https://classic.orphans.etccore.in/api/headers?limit=1&offset=1&orphan_only=true&include_txes=false](https://classic.orphans.etccore.in/api?limit=1&offset=1&orphan_only=true&include_txes=false)
 
 ##### Query Parameters
 
 - `raw_sql` This query parameter enables the caller to execute arbitrary SQL queries, eg.
   
-  Live demo example: [https://classic.orphans.etccore.in/api?raw_sql=SELECT * FROM heads WHERE number > 15537020 AND number < 15537055 AND orphan == true](https://classic.orphans.etccore.in/api?raw_sql=SELECT%20*%20FROM%20heads%20WHERE%20number%20%3E%2015537020%20AND%20number%20%3C%2015537055%20AND%20orphan%20==%20true)
+  Live demo example: [https://classic.orphans.etccore.in/api/headers?raw_sql=SELECT * FROM headers WHERE number > 15537020 AND number < 15537055 AND orphan == true](https://classic.orphans.etccore.in/api?raw_sql=SELECT%20*%20FROM%20heads%20WHERE%20number%20%3E%2015537020%20AND%20number%20%3C%2015537055%20AND%20orphan%20==%20true)
 
   :warning: This query parameter precludes any other query parameters. Any other query parameters will be ignored.
   
@@ -138,4 +138,4 @@ This endpoint returns transaction information. Blocks may be nested under transa
 
 - `offset` This query parameter offsets the transactions returned. Its value should be an integer. Default is `0`.
 
-- `include_heads` This query parameter enables/disables the inclusion of related headers in the response. Headers are included by default. To disable, use `?include_heads=false`. 
+- `include_headers` This query parameter enables/disables the inclusion of related headers in the response. Headers are included by default. To disable, use `?include_headers=false`. 

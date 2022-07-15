@@ -68,12 +68,12 @@ func init() {
 
 }
 
-// Head is our app representation of a block header.
+// Header is our app representation of a block header.
 // We have to reinvent the wheel because we want to play nice with the database,
 // and the database doesn't have a model *big.Ints or common.Hash or block.Nonce, etc.
 // All *big.Ints are stored as strings in the database unless they are safely converted to uint64s (ie block number).
 // All common.Hashes are stored as strings.
-type Head struct {
+type Header struct {
 
 	// These field are taken from gorm.Model, but omitting the ID field. We'll use Hash instead.
 	CreatedAt time.Time      `json:"created_at"`
@@ -137,7 +137,7 @@ type Tx struct {
 
 	Hash string `json:"hash" gorm:"unique;index;primaryKey"`
 
-	Heads []*Head `gorm:"many2many:head_txes;foreignKey:Hash;references:Hash" json:"headers,omitempty"`
+	Headers []*Header `gorm:"many2many:head_txes;foreignKey:Hash;references:Hash" json:"headers,omitempty"`
 
 	From     string `json:"from"`
 	To       string `json:"to"`
@@ -156,8 +156,8 @@ type Tx struct {
 // }
 
 // appHeader translates the original header into a our app specific header struct type.
-func appHeader(header *types.Header, isOrphan bool, uncleRecorderHash string) *Head {
-	return &Head{
+func appHeader(header *types.Header, isOrphan bool, uncleRecorderHash string) *Header {
+	return &Header{
 		Hash:        header.Hash().Hex(),
 		ParentHash:  header.ParentHash.Hex(),
 		UncleHash:   header.UncleHash.Hex(),
@@ -182,7 +182,7 @@ func appHeader(header *types.Header, isOrphan bool, uncleRecorderHash string) *H
 // CreateOrUpdate creates or updates a header, returning any error.
 // assignCols should be any of "uncle" or "orphan"; these are the fields which
 // are permitted to be updated in case the record already exists.
-func (h *Head) CreateOrUpdate(db *gorm.DB, assignCols ...string) error {
+func (h *Header) CreateOrUpdate(db *gorm.DB, assignCols ...string) error {
 	cols := []string{}
 	cols = append(cols, assignCols...)
 	res := db.
@@ -208,7 +208,7 @@ func (h *Head) CreateOrUpdate(db *gorm.DB, assignCols ...string) error {
 	}
 
 	for txi, tx := range h.Txes {
-		tx.Heads = []*Head{h}
+		tx.Headers = []*Header{h}
 		h.Txes[txi] = tx
 	}
 
@@ -304,7 +304,7 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 		}
 		db.Debug() // I love verbosity.
 
-		if err := db.AutoMigrate(&Head{}, &Tx{}); err != nil {
+		if err := db.AutoMigrate(&Header{}, &Tx{}); err != nil {
 			log.Println(err)
 			os.Exit(1)
 		}
@@ -332,7 +332,7 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 
 		// fetchAndAssignTransactionsForHeader will fetch the transactions for a given header and assign them
 		// to the struct pointer passed as an argument.
-		fetchAndAssignTransactionsForHeader := func(header *Head) error {
+		fetchAndAssignTransactionsForHeader := func(header *Header) error {
 			if header.Txes == nil {
 				header.Txes = []Tx{}
 			}
@@ -500,7 +500,7 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 	},
 }
 
-func headerStr(header *Head) string {
+func headerStr(header *Header) string {
 
 	// j, _ := json.Marshal(header)
 	// return string(j)
@@ -518,12 +518,12 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 var statusServerStartedAt time.Time
-var statusLatestHead *Head
+var statusLatestHead *Header
 
 type ServerStatus struct {
-	Uptime     uint64 `json:"uptime"`
-	ChainID    uint64 `json:"chain_id"`
-	LatestHead *Head  `json:"latest_head"`
+	Uptime     uint64  `json:"uptime"`
+	ChainID    uint64  `json:"chain_id"`
+	LatestHead *Header `json:"latest_head"`
 }
 
 func statusHandler(w http.ResponseWriter, r *http.Request) {
@@ -546,8 +546,8 @@ func startHttpServer(wg *sync.WaitGroup, db *gorm.DB) *http.Server {
 
 	r.Handle("/ping", handlers.LoggingHandler(os.Stderr, http.HandlerFunc(pingHandler)))
 	r.Handle("/status", handlers.LoggingHandler(os.Stderr, http.HandlerFunc(statusHandler)))
-	r.Handle("/api/heads", handlers.LoggingHandler(os.Stderr, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		heads := []*Head{}
+	r.Handle("/api/headers", handlers.LoggingHandler(os.Stderr, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		heads := []*Header{}
 		var res *gorm.DB
 
 		if q := r.URL.Query().Get("raw_sql"); q != "" {
@@ -559,7 +559,7 @@ func startHttpServer(wg *sync.WaitGroup, db *gorm.DB) *http.Server {
 			tx.Rollback()
 		} else {
 
-			res = db.Model(&Head{})
+			res = db.Model(&Header{})
 			res = res.Order("number DESC")
 
 			limit := uint64(1000)
@@ -629,8 +629,8 @@ func startHttpServer(wg *sync.WaitGroup, db *gorm.DB) *http.Server {
 		}
 		res = res.Offset(int(offset))
 
-		if q := r.URL.Query().Get("include_heads"); q != "false" {
-			res = res.Preload("Heads")
+		if q := r.URL.Query().Get("include_headers"); q != "false" {
+			res = res.Preload("Headers")
 		}
 
 		res.Find(&txes)
