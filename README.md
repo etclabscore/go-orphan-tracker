@@ -49,6 +49,12 @@ Fields which are natively `common.Hash` or `common.Address` or `*big.Int` or oth
 
 ## API
 
+### Demo
+
+There is a live server running this program at [classic.orphans.etccore.in](https://classic.orphans.etccore.in/api).
+
+The documentation below will occasionally include example links to explore at this demo server.
+
 #### `/ping` 
 
 This endpoint returns `pong` if the server is running.
@@ -114,7 +120,3 @@ __Kitchen Sink example:__ [https://classic.orphans.etccore.in/api?limit=1&offset
 
 
 ![image](https://user-images.githubusercontent.com/45600330/179065843-e8eec559-ba8a-415c-b24d-67d0bf49bfed.png)
-
-## Demo
-
-There is a live server running this program at [classic.orphans.etccore.in](https://classic.orphans.etccore.in/api).
