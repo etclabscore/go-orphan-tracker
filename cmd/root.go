@@ -333,13 +333,11 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 		// fetchAndAssignTransactionsForHeader will fetch the transactions for a given header and assign them
 		// to the struct pointer passed as an argument.
 		fetchAndAssignTransactionsForHeader := func(header *Header) error {
-			if header.Txes == nil {
-				header.Txes = []Tx{}
-			}
 			bl, err := client.BlockByHash(context.Background(), common.HexToHash(header.Hash))
 			if err != nil {
 				return err
 			}
+			header.Txes = []Tx{}
 			for _, tx := range bl.Transactions() {
 				tx, err := appTx(tx, bl.BaseFee())
 				if err != nil {
