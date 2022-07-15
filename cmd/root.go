@@ -547,14 +547,14 @@ func startHttpServer(wg *sync.WaitGroup, db *gorm.DB) *http.Server {
 	r.Handle("/ping", handlers.LoggingHandler(os.Stderr, http.HandlerFunc(pingHandler)))
 	r.Handle("/status", handlers.LoggingHandler(os.Stderr, http.HandlerFunc(statusHandler)))
 	r.Handle("/api/headers", handlers.LoggingHandler(os.Stderr, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		heads := []*Header{}
+		headers := []*Header{}
 		var res *gorm.DB
 
 		if q := r.URL.Query().Get("raw_sql"); q != "" {
 			// Wrap the raw SQL in a transaction so we can rollback afterwards in case anyone feels frisky with
 			// mischievous queries.
 			tx := db.Begin()
-			res = tx.Raw(q).Scan(&heads)
+			res = tx.Raw(q).Scan(&headers)
 			tx.Rollback()
 
 		} else {
@@ -592,7 +592,7 @@ func startHttpServer(wg *sync.WaitGroup, db *gorm.DB) *http.Server {
 				res = res.Where("number <= ?", max)
 			}
 
-			res.Find(&heads)
+			res.Find(&headers)
 		}
 
 		if res.Error != nil {
@@ -601,7 +601,7 @@ func startHttpServer(wg *sync.WaitGroup, db *gorm.DB) *http.Server {
 			return
 		}
 
-		j, err := json.MarshalIndent(heads, "", "  ")
+		j, err := json.MarshalIndent(headers, "", "  ")
 		if err != nil {
 			log.Println(err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
