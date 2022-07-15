@@ -131,9 +131,9 @@ type Head struct {
 
 type Tx struct {
 	// These field are taken from gorm.Model, but omitting the ID field. We'll use Hash instead.
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	DeletedAt gorm.DeletedAt `gorm:"index"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 
 	Hash string `json:"hash" gorm:"unique;index;primaryKey"`
 
