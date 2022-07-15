@@ -137,7 +137,7 @@ type Tx struct {
 
 	Hash string `json:"hash" gorm:"unique;index;primaryKey"`
 
-	Heads []*Head `gorm:"many2many:head_txes;foreignKey:Hash;references:Hash" json:"-"`
+	Heads []*Head `gorm:"many2many:head_txes;foreignKey:Hash;references:Hash" json:"headers,omitempty"`
 
 	From     string `json:"from"`
 	To       string `json:"to"`
@@ -546,14 +546,14 @@ func startHttpServer(wg *sync.WaitGroup, db *gorm.DB) *http.Server {
 
 	r.Handle("/ping", handlers.LoggingHandler(os.Stderr, http.HandlerFunc(pingHandler)))
 	r.Handle("/status", handlers.LoggingHandler(os.Stderr, http.HandlerFunc(statusHandler)))
-	r.Handle("/api", handlers.LoggingHandler(os.Stderr, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	r.Handle("/api/heads", handlers.LoggingHandler(os.Stderr, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		heads := []*Head{}
 		var res *gorm.DB
 
 		if q := r.URL.Query().Get("raw_sql"); q != "" {
 			// Wrap the raw SQL in a transaction so we can rollback afterwards in case anyone feels frisky with
 			// mischievous queries.
-			// eg. /api?raw_sql=SELECT * FROM headers WHERE number > 0
+			// eg. /api?raw_sql=SELECT * FROM heads WHERE number > 0
 			tx := db.Begin()
 			res = tx.Raw(q).Scan(&heads)
 			tx.Rollback()
@@ -582,6 +582,16 @@ func startHttpServer(wg *sync.WaitGroup, db *gorm.DB) *http.Server {
 				res = res.Preload("Txes")
 			}
 
+			if q := r.URL.Query().Get("header_number_min"); q != "" {
+				min, _ := strconv.ParseUint(q, 10, 64)
+				res = res.Where("number >= ?", min)
+			}
+
+			if q := r.URL.Query().Get("header_number_max"); q != "" {
+				max, _ := strconv.ParseUint(q, 10, 64)
+				res = res.Where("number <= ?", max)
+			}
+
 			res.Find(&heads)
 		}
 
@@ -592,6 +602,46 @@ func startHttpServer(wg *sync.WaitGroup, db *gorm.DB) *http.Server {
 		}
 
 		j, err := json.MarshalIndent(heads, "", "  ")
+		if err != nil {
+			log.Println(err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(j)
+	})))
+
+	r.Handle("/api/txes", handlers.LoggingHandler(os.Stderr, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		txes := []Tx{}
+		var res *gorm.DB
+
+		res = db.Model(Tx{})
+
+		limit := uint64(1000)
+		if q := r.URL.Query().Get("limit"); q != "" {
+			limit, _ = strconv.ParseUint(q, 10, 64)
+		}
+		res = res.Limit(int(limit))
+
+		offset := uint64(0)
+		if q := r.URL.Query().Get("offset"); q != "" {
+			offset, _ = strconv.ParseUint(q, 10, 64)
+		}
+		res = res.Offset(int(offset))
+
+		if q := r.URL.Query().Get("include_heads"); q != "false" {
+			res = res.Preload("Heads")
+		}
+
+		res.Find(&txes)
+
+		if res.Error != nil {
+			log.Println(res.Error)
+			http.Error(w, res.Error.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		j, err := json.MarshalIndent(txes, "", "  ")
 		if err != nil {
 			log.Println(err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
