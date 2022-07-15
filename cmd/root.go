@@ -102,7 +102,7 @@ type Header struct {
 		//   foreign key: user_refer_id, reference: users.refer
 		//   foreign key: profile_refer, reference: profiles.user_refer
 	*/
-	Txes []Tx `gorm:"many2many:head_txes;foreignKey:Hash;references:Hash" json:"txes,omitempty"`
+	Txes []Tx `gorm:"many2many:header_txes;foreignKey:Hash;references:Hash" json:"txes,omitempty"`
 
 	// types.Header:
 	ParentHash  string `json:"parentHash"`
@@ -137,7 +137,7 @@ type Tx struct {
 
 	Hash string `json:"hash" gorm:"unique;index;primaryKey"`
 
-	Headers []*Header `gorm:"many2many:head_txes;foreignKey:Hash;references:Hash" json:"headers,omitempty"`
+	Headers []*Header `gorm:"many2many:header_txes;foreignKey:Hash;references:Hash" json:"headers,omitempty"`
 
 	From     string `json:"from"`
 	To       string `json:"to"`
@@ -553,10 +553,10 @@ func startHttpServer(wg *sync.WaitGroup, db *gorm.DB) *http.Server {
 		if q := r.URL.Query().Get("raw_sql"); q != "" {
 			// Wrap the raw SQL in a transaction so we can rollback afterwards in case anyone feels frisky with
 			// mischievous queries.
-			// eg. /api?raw_sql=SELECT * FROM heads WHERE number > 0
 			tx := db.Begin()
 			res = tx.Raw(q).Scan(&heads)
 			tx.Rollback()
+
 		} else {
 
 			res = db.Model(&Header{})
@@ -582,12 +582,12 @@ func startHttpServer(wg *sync.WaitGroup, db *gorm.DB) *http.Server {
 				res = res.Preload("Txes")
 			}
 
-			if q := r.URL.Query().Get("header_number_min"); q != "" {
+			if q := r.URL.Query().Get("number_min"); q != "" {
 				min, _ := strconv.ParseUint(q, 10, 64)
 				res = res.Where("number >= ?", min)
 			}
 
-			if q := r.URL.Query().Get("header_number_max"); q != "" {
+			if q := r.URL.Query().Get("number_max"); q != "" {
 				max, _ := strconv.ParseUint(q, 10, 64)
 				res = res.Where("number <= ?", max)
 			}
@@ -615,25 +615,35 @@ func startHttpServer(wg *sync.WaitGroup, db *gorm.DB) *http.Server {
 		txes := []Tx{}
 		var res *gorm.DB
 
-		res = db.Model(Tx{})
+		if q := r.URL.Query().Get("raw_sql"); q != "" {
+			// Wrap the raw SQL in a transaction so we can rollback afterwards in case anyone feels frisky with
+			// mischievous queries.
+			tx := db.Begin()
+			res = tx.Raw(q).Scan(&txes)
+			tx.Rollback()
 
-		limit := uint64(1000)
-		if q := r.URL.Query().Get("limit"); q != "" {
-			limit, _ = strconv.ParseUint(q, 10, 64)
+		} else {
+			res = db.Model(Tx{})
+			res = res.Order("created_at DESC")
+
+			limit := uint64(1000)
+			if q := r.URL.Query().Get("limit"); q != "" {
+				limit, _ = strconv.ParseUint(q, 10, 64)
+			}
+			res = res.Limit(int(limit))
+
+			offset := uint64(0)
+			if q := r.URL.Query().Get("offset"); q != "" {
+				offset, _ = strconv.ParseUint(q, 10, 64)
+			}
+			res = res.Offset(int(offset))
+
+			if q := r.URL.Query().Get("include_headers"); q != "false" {
+				res = res.Preload("Headers")
+			}
+
+			res.Find(&txes)
 		}
-		res = res.Limit(int(limit))
-
-		offset := uint64(0)
-		if q := r.URL.Query().Get("offset"); q != "" {
-			offset, _ = strconv.ParseUint(q, 10, 64)
-		}
-		res = res.Offset(int(offset))
-
-		if q := r.URL.Query().Get("include_headers"); q != "false" {
-			res = res.Preload("Headers")
-		}
-
-		res.Find(&txes)
 
 		if res.Error != nil {
 			log.Println(res.Error)

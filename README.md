@@ -109,12 +109,6 @@ This endpoint returns all stored block information, with any associated transact
 __Kitchen Sink example:__ [https://classic.orphans.etccore.in/api/headers?limit=1&offset=1&orphan_only=true&include_txes=false](https://classic.orphans.etccore.in/api?limit=1&offset=1&orphan_only=true&include_txes=false)
 
 ##### Query Parameters
-
-- `raw_sql` This query parameter enables the caller to execute arbitrary SQL queries, eg.
-  
-  Live demo example: [https://classic.orphans.etccore.in/api/headers?raw_sql=SELECT * FROM headers WHERE number > 15537020 AND number < 15537055 AND orphan == true](https://classic.orphans.etccore.in/api?raw_sql=SELECT%20*%20FROM%20heads%20WHERE%20number%20%3E%2015537020%20AND%20number%20%3C%2015537055%20AND%20orphan%20==%20true)
-
-  :warning: This query parameter precludes any other query parameters. Any other query parameters will be ignored.
   
 - `limit` This query parameter limits the number of blocks returned. Its value should be an integer. Default is `1000`.
 
@@ -124,13 +118,19 @@ __Kitchen Sink example:__ [https://classic.orphans.etccore.in/api/headers?limit=
   
 - `include_txes` This query parameter enables/disables the inclusion of transactions in the response. Transactions are included by default. To disable, use `?include_txes=false`. 
 
-- `header_number_min`, `header_number_max` These query parameters limit the blocks returned to those with a header number between the min and max values. The values should be integers, and will be inclusive bounds.
+- `number_min`, `number_max` These query parameters limit the blocks returned to those with a header number between the min and max values. The values should be integers, and will be inclusive bounds.
+
+- `raw_sql` This query parameter enables the caller to execute arbitrary SQL queries, eg.
+
+  Live demo example: [https://classic.orphans.etccore.in/api/headers?raw_sql=SELECT * FROM headers WHERE number > 15537020 AND number < 15537055 AND orphan == true](https://classic.orphans.etccore.in/api?raw_sql=SELECT%20*%20FROM%20heads%20WHERE%20number%20%3E%2015537020%20AND%20number%20%3C%2015537055%20AND%20orphan%20==%20true)
+
+  :warning: This query parameter precludes any other query parameters. Any other query parameters will be ignored.
 
 ![image](https://user-images.githubusercontent.com/45600330/179065843-e8eec559-ba8a-415c-b24d-67d0bf49bfed.png)
 
 #### `/api/txes`
 
-This endpoint returns transaction information. Blocks may be nested under transactions.
+This endpoint returns transaction information. Blocks may be nested under transactions with the annotation `headers`.
 
 ##### Query Parameters
 
@@ -139,3 +139,6 @@ This endpoint returns transaction information. Blocks may be nested under transa
 - `offset` This query parameter offsets the transactions returned. Its value should be an integer. Default is `0`.
 
 - `include_headers` This query parameter enables/disables the inclusion of related headers in the response. Headers are included by default. To disable, use `?include_headers=false`. 
+
+- `raw_sql` This query parameter enables the caller to execute arbitrary SQL queries.
+  :warning: This query parameter precludes any other query parameters. Any other query parameters will be ignored.
