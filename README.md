@@ -92,6 +92,8 @@ Example response:
 
 This endpoint returns all stored block information, with any associated transactions nested. The default behavior will return all blocks and their transactions nested, and the blocks will be in descending order by number.
 
+__Kitchen Sink example:__ [https://classic.orphans.etccore.in/api?limit=1&offset=1&orphan_only=true&include_txes=false](https://classic.orphans.etccore.in/api?limit=1&offset=1&orphan_only=true&include_txes=false)
+
 ##### Query Parameters
 
 - `raw_sql` This query parameter enables the caller to execute arbitrary SQL queries, eg. 
@@ -100,13 +102,19 @@ This endpoint returns all stored block information, with any associated transact
     curl http://localhost:8080/api?raw_sql=SELECT * FROM heads WHERE number > 10 AND orphan == true AND uncle_by == ""
   ```
   
+  Live demo example: [https://classic.orphans.etccore.in/api?raw_sql=SELECT%20*%20FROM%20heads%20WHERE%20number%20%3E%2010%20AND%20orphan%20==%20true%20AND%20uncle_by%20==%20%22%22](https://classic.orphans.etccore.in/api?raw_sql=SELECT%20*%20FROM%20heads%20WHERE%20number%20%3E%2010%20AND%20orphan%20==%20true%20AND%20uncle_by%20==%20%22%22)
+  
 - `limit` This query parameter limits the number of blocks returned. Its value should be an integer. Default is `1000`.
 
 - `offset` This query parameter offsets the blocks returned. Its value should be an integer. Default is `0`.
 
 - `orphan_only` This query parameter returns only orphan blocks. Its value should be a boolean. Default is `false`.
   
-- `include_txes` This query parameter enables/disables the inclusion of transactions in the response. Transactions are included by default. To disable, use `?include_txes=false`.
+- `include_txes` This query parameter enables/disables the inclusion of transactions in the response. Transactions are included by default. To disable, use `?include_txes=false`. 
+
 
 ![image](https://user-images.githubusercontent.com/45600330/179065843-e8eec559-ba8a-415c-b24d-67d0bf49bfed.png)
 
+## Demo
+
+There is a live server running this program at [classic.orphans.etccore.in](https://classic.orphans.etccore.in/api).
