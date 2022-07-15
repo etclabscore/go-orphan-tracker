@@ -521,16 +521,16 @@ var statusServerStartedAt time.Time
 var statusLatestHead *Header
 
 type ServerStatus struct {
-	Uptime     uint64  `json:"uptime"`
-	ChainID    uint64  `json:"chain_id"`
-	LatestHead *Header `json:"latest_head"`
+	Uptime       uint64  `json:"uptime"`
+	ChainID      uint64  `json:"chain_id"`
+	LatestHeader *Header `json:"latest_header"`
 }
 
 func statusHandler(w http.ResponseWriter, r *http.Request) {
 	status := ServerStatus{
-		Uptime:     uint64(time.Since(statusServerStartedAt).Round(time.Second).Seconds()),
-		ChainID:    chainID.Uint64(),
-		LatestHead: statusLatestHead,
+		Uptime:       uint64(time.Since(statusServerStartedAt).Round(time.Second).Seconds()),
+		ChainID:      chainID.Uint64(),
+		LatestHeader: statusLatestHead,
 	}
 	j, _ := json.MarshalIndent(status, "", "  ")
 	w.Header().Set("Content-Type", "application/json")
