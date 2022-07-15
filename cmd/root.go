@@ -496,15 +496,15 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 
 func headerStr(header *Head) string {
 
-	j, _ := json.Marshal(header)
-	return string(j)
+	// j, _ := json.Marshal(header)
+	// return string(j)
 
-	// hasUncles := "no"
-	// if common.HexToHash(header.UncleHash) != types.EmptyUncleHash {
-	// 	hasUncles = "yes"
-	// }
-	// return fmt.Sprintf(`n=%d t=%d hash=%s parent=%s miner=%s uncles=%s txes=%d`,
-	// 	header.Number, header.Time, header.Hash, header.ParentHash, header.Coinbase, hasUncles, len(header.Txes))
+	hasUncles := "no"
+	if common.HexToHash(header.UncleHash) != types.EmptyUncleHash {
+		hasUncles = "yes"
+	}
+	return fmt.Sprintf(`n=%d t=%d hash=%s parent=%s miner=%s uncles=%s txes=%d`,
+		header.Number, header.Time, header.Hash[:10], header.ParentHash[:10], header.Coinbase[:10], hasUncles, len(header.Txes))
 }
 
 func pingHandler(w http.ResponseWriter, r *http.Request) {
