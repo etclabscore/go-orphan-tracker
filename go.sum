@@ -73,6 +73,8 @@ github.com/envoyproxy/go-control-plane v0.9.4/go.mod h1:6rpuAdCZL397s3pYoYcLgu1m
 github.com/envoyproxy/go-control-plane v0.9.7/go.mod h1:cwu0lG7PUMfa9snN8LXBig5ynNVH9qI8YYLbd1fK2po=
 github.com/envoyproxy/go-control-plane v0.9.9-0.20201210154907-fd9021fe5dad/go.mod h1:cXg6YxExXjJnVBQHBLXeUAgxn2UodCpnH306RInaBQk=
 github.com/envoyproxy/protoc-gen-validate v0.1.0/go.mod h1:iSmxcyjqTsJpI2R4NaDN7+kN2VEUnK/pcBlmesArF7c=
+github.com/etclabscore/core-geth v1.12.8 h1:WUpMfaf0X9rreT9i1+s1pTrVnMvN1B/fqCDMJZ4+x6w=
+github.com/etclabscore/core-geth v1.12.8/go.mod h1:X+exBXpksfo70IACxX6T0wsuNpQ813/RcXl37Tnx30M=
 github.com/etclabscore/go-jsonschema-walk v0.0.6 h1:DrNzoKWKd8f8XB5nFGBY00IcjakRE22OTI12k+2LkyY=
 github.com/etclabscore/go-openrpc-reflect v0.0.36 h1:kSqNB2U8RVoW4si+4fsv13NGNkRAQ5j78zTUx1qiehk=
 github.com/ethereum/evmc/v7 v7.5.0 h1:vwKcs1DINXqvaymranmlpO64fysJJkirCCJ+kkaPaCs=

@@ -3,7 +3,7 @@ module github.com/meowsbits/go-orphan-tracker
 go 1.18
 
 require (
-	github.com/ethereum/go-ethereum v0.0.0-00010101000000-000000000000
+	github.com/ethereum/go-ethereum v1.10.20
 	github.com/gorilla/handlers v1.5.1
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/spf13/cobra v1.5.0
@@ -48,4 +48,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.0 // indirect
 )
 
-replace github.com/ethereum/go-ethereum => /home/ia/go/src/github.com/ethereum/go-ethereum
+replace github.com/ethereum/go-ethereum v1.10.20 => github.com/etclabscore/core-geth v1.12.8
