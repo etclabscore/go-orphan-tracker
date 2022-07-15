@@ -27,6 +27,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"time"
 
@@ -73,9 +74,9 @@ func init() {
 type Head struct {
 
 	// These field are taken from gorm.Model, but omitting the ID field. We'll use Hash instead.
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	DeletedAt gorm.DeletedAt `gorm:"index"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 
 	// Hash is the SAME VALUE as Header.Hash(), but we get to tell gorm that it must be unique.
 	Hash string `gorm:"unique;index;primaryKey;" json:"hash"`
@@ -99,7 +100,7 @@ type Head struct {
 		//   foreign key: user_refer_id, reference: users.refer
 		//   foreign key: profile_refer, reference: profiles.user_refer
 	*/
-	Txes []Tx `gorm:"many2many:head_txes;foreignKey:Hash;references:Hash" json:"txes"`
+	Txes []Tx `gorm:"many2many:head_txes;foreignKey:Hash;references:Hash" json:"txes,omitempty"`
 
 	// types.Header:
 	ParentHash  string `json:"parentHash"`
@@ -116,7 +117,7 @@ type Head struct {
 	Extra       []byte `json:"extraData"`
 	MixDigest   string `json:"mixHash"`
 	Nonce       string `json:"nonce"`
-	BaseFee     string `json:"baseFeePerGas"` // BaseFee was added by EIP-1559 and is ignored in legacy headers.
+	BaseFee     string `json:"baseFeePerGas,omitempty"` // BaseFee was added by EIP-1559 and is ignored in legacy headers.
 
 	// Orphan is a flag indicating whether this header is an orphan.
 	Orphan bool `gorm:"default:false" json:"orphan"`
@@ -416,7 +417,9 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 					return
 
 				case header := <-headCh:
-					log.Println("New head:", headerStr(appHeader(header, false, "")))
+					latestHead := appHeader(header, false, "")
+					log.Println("New head:", headerStr(latestHead))
+					statusLatestHead = latestHead
 
 					if header.UncleHash == types.EmptyUncleHash {
 						continue
@@ -511,6 +514,26 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("pong"))
 }
 
+var statusServerStartedAt time.Time
+var statusLatestHead *Head
+
+type ServerStatus struct {
+	Uptime     uint64 `json:"uptime"`
+	ChainID    uint64 `json:"chain_id"`
+	LatestHead *Head  `json:"latest_head"`
+}
+
+func statusHandler(w http.ResponseWriter, r *http.Request) {
+	status := ServerStatus{
+		Uptime:     uint64(time.Since(statusServerStartedAt).Round(time.Second).Seconds()),
+		ChainID:    chainID.Uint64(),
+		LatestHead: statusLatestHead,
+	}
+	j, _ := json.MarshalIndent(status, "", "  ")
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(j)
+}
+
 // startHttpServer is copy-pasted from https://stackoverflow.com/a/42533360.
 // It allows us to gracefully shutdown the server when the program is interrupted or killed.
 func startHttpServer(wg *sync.WaitGroup, db *gorm.DB) *http.Server {
@@ -519,9 +542,46 @@ func startHttpServer(wg *sync.WaitGroup, db *gorm.DB) *http.Server {
 	r := http.NewServeMux()
 
 	r.Handle("/ping", handlers.LoggingHandler(os.Stderr, http.HandlerFunc(pingHandler)))
+	r.Handle("/status", handlers.LoggingHandler(os.Stderr, http.HandlerFunc(statusHandler)))
 	r.Handle("/api", handlers.LoggingHandler(os.Stderr, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		heads := []*Head{}
-		res := db.Model(&Head{}).Preload("Txes").Find(&heads)
+		var res *gorm.DB
+
+		if q := r.URL.Query().Get("raw_sql"); q != "" {
+			// Wrap the raw SQL in a transaction so we can rollback afterwards in case anyone feels frisky with
+			// mischievous queries.
+			// eg. /api?raw_sql=SELECT * FROM headers WHERE number > 0
+			tx := db.Begin()
+			res = tx.Raw(q).Scan(&heads)
+			tx.Rollback()
+		} else {
+
+			res = db.Model(&Head{})
+			res = res.Order("number DESC")
+
+			limit := uint64(1000)
+			if q := r.URL.Query().Get("limit"); q != "" {
+				limit, _ = strconv.ParseUint(q, 10, 64)
+			}
+			res = res.Limit(int(limit))
+
+			offset := uint64(0)
+			if q := r.URL.Query().Get("offset"); q != "" {
+				offset, _ = strconv.ParseUint(q, 10, 64)
+			}
+			res = res.Offset(int(offset))
+
+			if q := r.URL.Query().Get("orphan_only"); q == "true" {
+				res = res.Where("orphan = ?", true)
+			}
+
+			if q := r.URL.Query().Get("include_txes"); q != "false" {
+				res = res.Preload("Txes")
+			}
+
+			res.Find(&heads)
+		}
+
 		if res.Error != nil {
 			log.Println(res.Error)
 			http.Error(w, res.Error.Error(), http.StatusInternalServerError)
@@ -540,6 +600,7 @@ func startHttpServer(wg *sync.WaitGroup, db *gorm.DB) *http.Server {
 
 	srv.Handler = r
 
+	statusServerStartedAt = time.Now()
 	go func() {
 		defer wg.Done() // let main know we are done cleaning up
 
