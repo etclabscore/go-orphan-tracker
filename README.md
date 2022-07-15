@@ -61,7 +61,7 @@ Example response:
 
 ```json
 {
-  "uptime": 42,
+  "uptime": 324,
   "chain_id": 61,
   "latest_head": {
         "created_at": "0001-01-01T00:00:00Z",

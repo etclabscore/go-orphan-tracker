@@ -133,9 +133,10 @@ type Tx struct {
 	UpdatedAt time.Time
 	DeletedAt gorm.DeletedAt `gorm:"index"`
 
+	Hash string `json:"hash" gorm:"unique;index;primaryKey"`
+
 	Heads []*Head `gorm:"many2many:head_txes;foreignKey:Hash;references:Hash" json:"-"`
 
-	Hash     string `json:"hash" gorm:"unique;index;primaryKey"`
 	From     string `json:"from"`
 	To       string `json:"to"`
 	Data     string `json:"data"`
