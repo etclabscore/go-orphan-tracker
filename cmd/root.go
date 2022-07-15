@@ -156,7 +156,7 @@ type Tx struct {
 // }
 
 // appHeader translates the original header into a our app specific header struct type.
-func appHeader(header *types.Header, isOrphan bool, uncleRecorderHash string) *Header {
+func appHeader(header *types.Header) *Header {
 	return &Header{
 		Hash:        header.Hash().Hex(),
 		ParentHash:  header.ParentHash.Hex(),
@@ -174,8 +174,8 @@ func appHeader(header *types.Header, isOrphan bool, uncleRecorderHash string) *H
 		MixDigest:   header.MixDigest.Hex(),
 		Nonce:       fmt.Sprintf("%d", header.Nonce.Uint64()),
 		BaseFee:     header.BaseFee.String(),
-		Orphan:      isOrphan,
-		UncleBy:     uncleRecorderHash,
+		// Orphan
+		// UncleBy
 	}
 }
 
@@ -260,7 +260,11 @@ eth_subscribeNewSideHeads is used to subscribe to new side block events.
 When a new side block event happens, the reported side block is recorded in the database.
 Its canonical counterpart is queried via eth_getHeaderByNumber and that header too is stored in the database.
 
-eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for status logging.
+eth_subscribeNewHeads is used to subscribe to new blocks.
+These new (canonical) blocks are audited to see if they have listed uncles.
+If not, they're only held in memory as the latest block to give an observable status to the program.
+If they DO contain uncles, we query for those uncles and record them, along with
+the canonical block which cites them (ie. the current head).
 `,
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
@@ -359,7 +363,7 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 				return err
 			}
 
-			canonHead := appHeader(canonBlock.Header(), false, "")
+			canonHead := appHeader(canonBlock.Header())
 
 			if err := fetchAndAssignTransactionsForHeader(canonHead); err != nil {
 				return err
@@ -376,20 +380,32 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 		go func() {
 			for {
 				select {
+				// Shutdown
+				// --------------------------------------------------
 				case sig := <-interruptCh:
 					log.Println("Received signal:", sig)
 					quitCh <- sig
 					return
 
-					// Sides
+					// Errors
+					// --------------------------------------------------
 				case err := <-sideSub.Err():
 					log.Println(err)
 					quitCh <- os.Interrupt
 					return
 
+				case err := <-headSub.Err():
+					log.Println(err)
+					quitCh <- os.Interrupt
+					return
+
+					// Sides
+					// --------------------------------------------------
 				case header := <-sideHeadCh:
 
-					sideHead := appHeader(header, true, "")
+					sideHead := appHeader(header)
+					sideHead.Orphan = true
+
 					if err := fetchAndAssignTransactionsForHeader(sideHead); err != nil {
 						log.Println(err)
 						quitCh <- os.Interrupt
@@ -412,13 +428,10 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 					}
 
 					// Canons
-				case err := <-headSub.Err():
-					log.Println(err)
-					quitCh <- os.Interrupt
-					return
-
+					// --------------------------------------------------
 				case header := <-headCh:
-					latestHead := appHeader(header, false, "")
+					latestHead := appHeader(header)
+					latestHead.Orphan = false
 
 					log.Println("New head:", headerStr(latestHead))
 					statusLatestHead = latestHead
@@ -434,6 +447,10 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 						quitCh <- os.Interrupt
 						continue
 					}
+
+					// Allowing an update on the 'orphan' field ensures that, in the unlikely event
+					// that this header was once on the sidechain, it will now be updated in the store
+					// as canonical (orphan=false), which all blocks that come through this subscription will be.
 					if err := latestHead.CreateOrUpdate(db, "orphan"); err != nil {
 						log.Println(err)
 						quitCh <- os.Interrupt
@@ -449,10 +466,17 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 						return
 					}
 
-					uncles := bl.Uncles()
-					for _, uncle := range uncles {
+					for _, uncle := range bl.Uncles() {
 
-						uncleHead := appHeader(uncle, false, bl.Hash().Hex())
+						uncleHead := appHeader(uncle)
+
+						// The UncleBy field references which block cited this uncle we're looking at now.
+						// Here, the block doing the citing is the latest head block.
+						uncleHead.UncleBy = bl.Hash().Hex()
+
+						// All uncles are orphans. Consensus rule.
+						uncleHead.Orphan = true
+
 						if err := fetchAndAssignTransactionsForHeader(uncleHead); err != nil {
 							log.Println(err)
 							quitCh <- os.Interrupt
@@ -461,7 +485,7 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 
 						log.Println("New uncle:", headerStr(uncleHead))
 
-						if err := uncleHead.CreateOrUpdate(db, "uncle_by"); err != nil {
+						if err := uncleHead.CreateOrUpdate(db, "uncle_by", "orphan"); err != nil {
 							log.Println(err)
 							quitCh <- os.Interrupt
 							return
@@ -493,13 +517,15 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 		// --------------------------------------------------
 		log.Println("Shutting down...")
 
-		// now close the server gracefully ("shutdown")
-		// timeout could be given with a proper context
-		if err := srv.Shutdown(context.Background()); err != nil {
-			panic(err) // failure/timeout shutting down the server gracefully
+		// Now close the server gracefully ("shutdown").
+		shutdownCtx, _ := context.WithTimeout(context.Background(), time.Second*10)
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+
+			// Failure/timeout shutting down the server gracefully.
+			panic(err)
 		}
 
-		// wait for goroutine started in startHttpServer() to stop
+		// Wait for goroutine started in startHttpServer() to stop.
 		httpServerExitDone.Wait()
 
 		log.Println("Server shutdown complete")
@@ -508,7 +534,6 @@ eth_subscribeNewHeads is used to subscribe to new blocks, but is used only for s
 		headSub.Unsubscribe()
 
 		log.Println("Subscriptions closed")
-
 	},
 }
 
