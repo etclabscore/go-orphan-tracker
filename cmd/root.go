@@ -189,7 +189,7 @@ func (h *Header) CreateOrUpdate(db *gorm.DB, assignCols ...string) error {
 		// Session(&gorm.Session{FullSaveAssociations: true}).
 		Clauses(
 			clause.OnConflict{
-				Columns:   []clause.Column{{Table: "heads", Name: "hash"}},
+				Columns:   []clause.Column{{Table: "headers", Name: "hash"}},
 				DoUpdates: clause.AssignmentColumns(cols),
 				// UpdateAll: true,
 			},
