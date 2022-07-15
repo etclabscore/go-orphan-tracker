@@ -1,8 +1,12 @@
 package cmd
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log"
+	mrand "math/rand"
 	"os"
 	"path/filepath"
 	"testing"
@@ -63,8 +67,40 @@ var h2 = `{
   "orphan": false, 
   "uncleBy": ""
 }
-
 `
+
+func randomHex(n int) string {
+	bytes := make([]byte, n)
+	rand.Read(bytes)
+	return hex.EncodeToString(bytes)
+}
+
+// generateMockHead generates a fake head.
+// It DOES NOT FILL the following fields:
+// - txes
+// - unclehash
+// - uncleBy
+// - orphan
+// - basefee
+func generateMockHead() *Head {
+	h := &Head{}
+	h.Number = uint64(mrand.Int63n(1000000))
+	h.Difficulty = fmt.Sprintf("%d", mrand.Int63())
+
+	h.Hash = randomHex(32)
+	h.ParentHash = randomHex(32)
+	h.Coinbase = randomHex(20)
+	h.ReceiptHash = randomHex(32)
+	h.TxHash = randomHex(32)
+	h.MixDigest = randomHex(32)
+	h.Nonce = fmt.Sprintf("%d", mrand.Int63())
+	h.Extra = []byte("I was here.")
+
+	h.GasUsed = 63000
+	h.GasLimit = 8000000
+
+	return h
+}
 
 func TestHeadCreateOrUpdateWithTxes(t *testing.T) {
 	testDBPath := filepath.Join(os.TempDir(), "go-orphan-tracker-test-crud1.db")
@@ -146,4 +182,27 @@ func TestHeadCreateOrUpdateWithTxes(t *testing.T) {
 	j, _ = json.MarshalIndent(outH2, "", "  ")
 	t.Log(string(j))
 
+	if len(head1.Txes) != len(outH1.Txes) {
+		t.Fatal("Txes not properly saved")
+	}
+
+	if len(head2.Txes) != len(outH2.Txes) {
+		t.Fatal("Txes not properly saved")
+	}
+
+	if head1.Hash != outH1.Hash {
+		t.Fatal("Hash not properly saved")
+	}
+
+	if head2.Coinbase != outH2.Coinbase {
+		t.Fatal("Coinbase not properly saved")
+	}
+
+	h3 := Head{}
+	h3.Hash = "0xaaaaad47f9c809c411e45a763c6714b32e2531d07907f0ba9c00849dd514dddd"
+	h3.Coinbase = "0xDf7D7e053933b5cC24372f878c90E62dADAD5d43"
+
+	if err := h3.CreateOrUpdate(db, "orphan"); err != nil {
+		t.Fatal(err)
+	}
 }
