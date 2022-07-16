@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -157,6 +158,7 @@ type Tx struct {
 
 // appHeader translates the original header into a our app specific header struct type.
 func appHeader(header *types.Header) *Header {
+	nonce, _ := header.Nonce.MarshalText()
 	h := &Header{
 		Hash:        header.Hash().Hex(),
 		ParentHash:  header.ParentHash.Hex(),
@@ -165,14 +167,14 @@ func appHeader(header *types.Header) *Header {
 		Root:        header.Root.Hex(),
 		TxHash:      header.TxHash.Hex(),
 		ReceiptHash: header.ReceiptHash.Hex(),
-		Difficulty:  header.Difficulty.String(),
+		Difficulty:  (*hexutil.Big)(header.Difficulty).String(),
 		Number:      header.Number.Uint64(),
 		GasLimit:    header.GasLimit,
 		GasUsed:     header.GasUsed,
 		Time:        header.Time,
 		Extra:       header.Extra,
 		MixDigest:   header.MixDigest.Hex(),
-		Nonce:       fmt.Sprintf("%d", header.Nonce.Uint64()),
+		Nonce:       string(nonce),
 		// BaseFee:     header.BaseFee.String(),
 		// Orphan
 		// UncleBy
