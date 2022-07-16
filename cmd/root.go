@@ -175,7 +175,6 @@ func appHeader(header *types.Header) *Header {
 		Extra:       header.Extra,
 		MixDigest:   header.MixDigest.Hex(),
 		Nonce:       string(nonce),
-		// BaseFee:     header.BaseFee.String(),
 		// Orphan
 		// UncleBy
 	}
