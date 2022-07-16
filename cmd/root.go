@@ -614,9 +614,8 @@ func startHttpServer(wg *sync.WaitGroup, db *gorm.DB) *http.Server {
 		panic(err)
 	}
 	fileServer := http.FileServer(http.FS(subFs))
-	// prefixHandler := http.StripPrefix("/web/", fileServer)
-
 	r.Handle("/", handlers.LoggingHandler(os.Stderr, fileServer))
+
 	r.Handle("/ping", corsHeaderHandler(handlers.LoggingHandler(os.Stderr, http.HandlerFunc(pingHandler))))
 	r.Handle("/status", corsHeaderHandler(handlers.LoggingHandler(os.Stderr, http.HandlerFunc(statusHandler))))
 	r.Handle("/api/headers", corsHeaderHandler(handlers.LoggingHandler(os.Stderr, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
