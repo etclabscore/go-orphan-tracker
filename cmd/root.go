@@ -157,7 +157,7 @@ type Tx struct {
 
 // appHeader translates the original header into a our app specific header struct type.
 func appHeader(header *types.Header) *Header {
-	return &Header{
+	h := &Header{
 		Hash:        header.Hash().Hex(),
 		ParentHash:  header.ParentHash.Hex(),
 		UncleHash:   header.UncleHash.Hex(),
@@ -173,10 +173,16 @@ func appHeader(header *types.Header) *Header {
 		Extra:       header.Extra,
 		MixDigest:   header.MixDigest.Hex(),
 		Nonce:       fmt.Sprintf("%d", header.Nonce.Uint64()),
-		BaseFee:     header.BaseFee.String(),
+		// BaseFee:     header.BaseFee.String(),
 		// Orphan
 		// UncleBy
 	}
+
+	if header.BaseFee != nil {
+		h.BaseFee = header.BaseFee.String()
+	}
+
+	return h
 }
 
 // CreateOrUpdate creates or updates a header, returning any error.
