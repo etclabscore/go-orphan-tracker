@@ -114,7 +114,7 @@ __Kitchen Sink example:__ [https://classic.orphans.etccore.in/api/headers?limit=
 
 - `offset` This query parameter offsets the blocks returned. Its value should be an integer. Default is `0`.
 
-- `orphan_only` This query parameter returns only orphan blocks. Its value should be a boolean. Default is `false`.
+- `orphan` This query parameter defines a boolean value which defines a filter condition for the returned blocks. `orphan=false` will return canonical blocks. `orphan=true` will return orphan blocks. Default is _undefined_, which returns both.
   
 - `include_txes` This query parameter enables/disables the inclusion of transactions in the response. Transactions are included by default. To disable, use `?include_txes=false`. 
 

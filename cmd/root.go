@@ -617,12 +617,8 @@ func startHttpServer(wg *sync.WaitGroup, db *gorm.DB) *http.Server {
 			}
 			res = res.Offset(int(offset))
 
-			if q := r.URL.Query().Get("orphan_only"); q == "true" {
-				res = res.Where("orphan = ?", true)
-			}
-
-			if q := r.URL.Query().Get("include_txes"); q != "false" {
-				res = res.Preload("Txes")
+			if q := r.URL.Query().Get("orphan"); q != "" {
+				res = res.Where("orphan = ?", q)
 			}
 
 			if q := r.URL.Query().Get("number_min"); q != "" {
@@ -633,6 +629,10 @@ func startHttpServer(wg *sync.WaitGroup, db *gorm.DB) *http.Server {
 			if q := r.URL.Query().Get("number_max"); q != "" {
 				max, _ := strconv.ParseUint(q, 10, 64)
 				res = res.Where("number <= ?", max)
+			}
+
+			if q := r.URL.Query().Get("include_txes"); q != "false" {
+				res = res.Preload("Txes")
 			}
 
 			res.Find(&headers)
