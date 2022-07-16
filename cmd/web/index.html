@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <title>Orphan Tracker</title>
+
+  <link rel="stylesheet" href="./assets/styles/main.css">
+
+</head>
+
+<body>
+  <div class="wrapper">
+    <header>
+<!--      <h1>Orphan Tracker</h1>-->
+    </header>
+    <main>
+      <div class="status-container">
+      <div class="mytable-wrapper">
+        <table id="mytable">
+          <tbody id="mytable-body">
+          <tr id="latest-block"></tr>
+          <tr>
+            <th>Number</th>
+            <th>Timestamp</th>
+            <th>Miner</th>
+            <th>Hash</th>
+            <th>Uncle By</th>
+            <th>Gas Used</th>
+          </tr>
+
+
+          </tbody>
+        </table>
+
+        <div id="loading-icon">
+          <img src="./assets/images/oval.svg" alt="loading">
+        </div>
+
+      </div>
+    </main>
+    <footer>
+    </footer>
+  </div>
+  <script src="./assets/scripts/bundle.js"></script>
+</body>
+
+</html>

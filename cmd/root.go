@@ -20,8 +20,10 @@ package cmd
 
 import (
 	"context"
+	"embed"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"log"
 	"math/big"
 	"net/http"
@@ -300,6 +302,13 @@ the canonical block which cites them (ie. the current head).
 			os.Exit(1)
 		}
 		log.Println("Chain ID:", chainID)
+
+		latestH, err := client.HeaderByNumber(context.Background(), nil)
+		if err != nil {
+			log.Println(err)
+			os.Exit(1)
+		}
+		statusLatestHead = appHeader(latestH)
 
 		// Set up the database
 		// --------------------------------------------------
@@ -581,6 +590,18 @@ func statusHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(j)
 }
 
+func corsHeaderHandler(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET")
+		w.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, X-Auth-Token")
+		h.ServeHTTP(w, r)
+	})
+}
+
+//go:embed web/*
+var webContent embed.FS
+
 // startHttpServer is copy-pasted from https://stackoverflow.com/a/42533360.
 // It allows us to gracefully shutdown the server when the program is interrupted or killed.
 func startHttpServer(wg *sync.WaitGroup, db *gorm.DB) *http.Server {
@@ -588,9 +609,17 @@ func startHttpServer(wg *sync.WaitGroup, db *gorm.DB) *http.Server {
 
 	r := http.NewServeMux()
 
-	r.Handle("/ping", handlers.LoggingHandler(os.Stderr, http.HandlerFunc(pingHandler)))
-	r.Handle("/status", handlers.LoggingHandler(os.Stderr, http.HandlerFunc(statusHandler)))
-	r.Handle("/api/headers", handlers.LoggingHandler(os.Stderr, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	subFs, err := fs.Sub(webContent, "web")
+	if err != nil {
+		panic(err)
+	}
+	fileServer := http.FileServer(http.FS(subFs))
+	// prefixHandler := http.StripPrefix("/web/", fileServer)
+
+	r.Handle("/", handlers.LoggingHandler(os.Stderr, fileServer))
+	r.Handle("/ping", corsHeaderHandler(handlers.LoggingHandler(os.Stderr, http.HandlerFunc(pingHandler))))
+	r.Handle("/status", corsHeaderHandler(handlers.LoggingHandler(os.Stderr, http.HandlerFunc(statusHandler))))
+	r.Handle("/api/headers", corsHeaderHandler(handlers.LoggingHandler(os.Stderr, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		headers := []*Header{}
 		var res *gorm.DB
 
@@ -605,6 +634,7 @@ func startHttpServer(wg *sync.WaitGroup, db *gorm.DB) *http.Server {
 
 			res = db.Model(&Header{})
 			res = res.Order("number DESC")
+			res = res.Order("orphan DESC")
 
 			limit := uint64(1000)
 			if q := r.URL.Query().Get("limit"); q != "" {
@@ -653,9 +683,9 @@ func startHttpServer(wg *sync.WaitGroup, db *gorm.DB) *http.Server {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(j)
-	})))
+	}))))
 
-	r.Handle("/api/txes", handlers.LoggingHandler(os.Stderr, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	r.Handle("/api/txes", corsHeaderHandler(handlers.LoggingHandler(os.Stderr, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		txes := []Tx{}
 		var res *gorm.DB
 
@@ -703,7 +733,7 @@ func startHttpServer(wg *sync.WaitGroup, db *gorm.DB) *http.Server {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(j)
-	})))
+	}))))
 
 	srv.Handler = r
 
