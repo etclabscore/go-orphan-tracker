@@ -29,6 +29,9 @@ mkdir -p data
   This is the URL that the RPC client will listen on.
   Currently __only websockets or IPC__ are supported, because the program relies on _eth_subscribe_.
 
+- `--http.addr` is the address that the HTTP server will listen on, eg `:8080` or `0.0.0.0:1234`.
+  The server provides both a basic UI (via the `./cmd/orphan-tracker-ui` submodule) and an API at this address.
+
 ## API
 
 This program is providing web services at:
@@ -46,6 +49,10 @@ This program is providing web services at:
 - [https://classic.orphans.etccore.in/api/headers?raw_sql=SELECT * FROM headers WHERE number > 15537020 AND number < 15537055 AND orphan == true](https://classic.orphans.etccore.in/api/headers?raw_sql=SELECT%20*%20FROM%20headers%20WHERE%20number%20%3E%2015537020%20AND%20number%20%3C%2015537055%20AND%20orphan%20==%20true)
 
 ### Endpoints
+
+#### `/` 
+
+This endpoint serves a simple UI presenting the resources available via the API.
 
 #### `/ping` 
 
