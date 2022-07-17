@@ -661,6 +661,16 @@ func startHttpServer(wg *sync.WaitGroup, db *gorm.DB) *http.Server {
 				res = res.Where("number <= ?", max)
 			}
 
+			if q := r.URL.Query().Get("timestamp_min"); q != "" {
+				min, _ := strconv.ParseUint(q, 10, 64)
+				res = res.Where("time >= ?", min)
+			}
+
+			if q := r.URL.Query().Get("timestamp_max"); q != "" {
+				max, _ := strconv.ParseUint(q, 10, 64)
+				res = res.Where("time <= ?", max)
+			}
+
 			if q := r.URL.Query().Get("include_txes"); q != "false" {
 				res = res.Preload("Txes")
 			}
