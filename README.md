@@ -9,6 +9,7 @@ For all non-canonical blocks discovered, the corresponding canonical block (by h
 ### Build from source
 
 ```shell
+git submodule update --init --recursive
 mkdir -p ./build/bin
 go build -o ./build/bin/app .
 ```
