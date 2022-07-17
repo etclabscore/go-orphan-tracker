@@ -29,21 +29,6 @@ mkdir -p data
   This is the URL that the RPC client will listen on.
   Currently __only websockets or IPC__ are supported, because the program relies on _eth_subscribe_.
 
-## Schema
-
-The Sqlite3 database schema is as follows:
-
-- `headers` This table contains block header information (height, hash, timestamp, etc.).
-  It is used to track the sidechain and uncle progress of the blockchain.
-  - Entries will fill the boolean `orphan` field as `true` if they are sidechain (non-canonical) blocks.
-  - Entries will fill the string `uncleBy` field with the block/header hash of the block/header recording this block as an uncle.
-    The field will be empty if the block is not recorded as an uncle.
-- `txes` This table contains transactions information (hash, from, to, value, etc.).
-  These transactions are contained in either an uncle and/or orphan block.
-- `header_txes` This table is a join table which relates the `txes` table to the `headers` table as a many-to-many relation.
-
-Fields which are natively `common.Hash` or `common.Address` or `*big.Int` or other "specialty" fields (`BlockNonce`) are coerced to (usually) `string` or sometimes `uint64` if I'm sure they won't overflow. `common.Hash` and `common.Address` values will be stored hex-encoded, while `*big.Int` values are stored as numerical strings (via the `*big.Int.String()` method). 
-
 ## API
 
 There is a live server running this program at [classic.orphans.etccore.in](https://classic.orphans.etccore.in/api).
@@ -139,3 +124,18 @@ This endpoint returns transaction information. Blocks may be nested under transa
 
 - `raw_sql` This query parameter enables the caller to execute arbitrary SQL queries.
   :warning: This query parameter precludes any other query parameters. Any other query parameters will be ignored.
+
+## Schema
+
+The Sqlite3 database schema is as follows:
+
+- `headers` This table contains block header information (height, hash, timestamp, etc.).
+  It is used to track the sidechain and uncle progress of the blockchain.
+  - Entries will fill the boolean `orphan` field as `true` if they are sidechain (non-canonical) blocks.
+  - Entries will fill the string `uncleBy` field with the block/header hash of the block/header recording this block as an uncle.
+    The field will be empty if the block is not recorded as an uncle.
+- `txes` This table contains transactions information (hash, from, to, value, etc.).
+  These transactions are contained in either an uncle and/or orphan block.
+- `header_txes` This table is a join table which relates the `txes` table to the `headers` table as a many-to-many relation.
+
+Fields which are natively `common.Hash` or `common.Address` or `*big.Int` or other "specialty" fields (`BlockNonce`) are coerced to (usually) `string` or sometimes `uint64` if I'm sure they won't overflow. `common.Hash` and `common.Address` values will be stored hex-encoded, while `*big.Int` values are stored as numerical strings (via the `*big.Int.String()` method). 
