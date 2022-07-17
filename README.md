@@ -103,7 +103,7 @@ __Kitchen Sink example:__ [https://classic.orphans.etccore.in/api/headers?limit=
 - `include_txes` This query parameter enables/disables the inclusion of transactions in the response. Transactions are included by default. To disable, use `?include_txes=false`. 
 
 - `number_min`, `number_max` These query parameters limit the blocks returned to those with a header number between the min and max values. The values should be integers, and will be inclusive bounds.
-- 
+
 - `timestamp_min`, `timestamp_max` These query parameters limit the blocks returned to those with a header timestamp between the min and max values. The values should be integers, and will be inclusive bounds. The timestamp is the number of seconds since the UNIX epoch. It is a self-reported value filled by miners in the block header.
 
 - `raw_sql` This query parameter enables the caller to execute arbitrary SQL queries, eg.
