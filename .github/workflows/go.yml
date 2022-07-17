@@ -29,18 +29,9 @@ jobs:
     - name: Test
       run: go test -v ./...
     
-    - name: Upload to Release Action
+    - name: Upload release assets
       if: startsWith(github.ref, 'refs/tags/v')
-      # You may pin to the exact commit or the version.
-      # uses: Shopify/upload-to-release@9942a4c936dab172f7101dcc7dc20528ea949102
-      uses: Shopify/upload-to-release@v1.0.1
+      uses: softprops/action-gh-release@v1
       with:
-        # Artifact name
-        name: go-orphan-tracker
-        # Path to the file to upload
-        path: ./build/bin/go-orphan-tracker
-        # Content type for the file
-        # content-type: # optional, default is application/octet-stream
-        # secrets.GITHUB_TOKEN
-        repo-token: secrets.GITHUB_TOKEN
-      
+        draft: false
+        files: ./build/bin/go-orphan-tracker
