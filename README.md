@@ -31,7 +31,9 @@ mkdir -p data
 
 ## API
 
-There is a live server running this program at [classic.orphans.etccore.in](https://classic.orphans.etccore.in).
+This program is providing web services at:
+- [https://classic.orphans.etccore.in](https://classic.orphans.etccore.in)
+- [https://mordor.orphans.etccore.in](https://mordor.orphans.etccore.in)
 
 ### Examples
 
