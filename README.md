@@ -45,8 +45,6 @@ The Sqlite3 database schema is as follows:
 
 Fields which are natively `common.Hash` or `common.Address` or `*big.Int` or other "specialty" fields (`BlockNonce`) are coerced to (usually) `string` or sometimes `uint64` if I'm sure they won't overflow. `common.Hash` and `common.Address` values will be stored hex-encoded, while `*big.Int` values are stored as numerical strings (via the `*big.Int.String()` method). 
 
-![image](https://user-images.githubusercontent.com/45600330/179063477-56d21c7b-55e5-470c-8d69-433dc8f8f3e8.png)
-
 ## API
 
 There is a live server running this program at [classic.orphans.etccore.in](https://classic.orphans.etccore.in/api).
@@ -56,9 +54,9 @@ There is a live server running this program at [classic.orphans.etccore.in](http
 - [https://classic.orphans.etccore.in/ping](https://classic.orphans.etccore.in/ping)
 - [https://classic.orphans.etccore.in/status](https://classic.orphans.etccore.in/status)
 - [https://classic.orphans.etccore.in/api/headers](https://classic.orphans.etccore.in/api/headers)
-- [https://classic.orphans.etccore.in/api/headers?orphan_only=true](https://classic.orphans.etccore.in/api/headers?orphan_only=true)
-- [https://classic.orphans.etccore.in/api/headers?orphan_only=true&include_txes=false](https://classic.orphans.etccore.in/api/headers?orphan_only=true&include_txes=false)
-- [https://classic.orphans.etccore.in/api/headers?orphan_only=true&include_txes=false&limit=1&offset=1](https://classic.orphans.etccore.in/api/headers?orphan_only=true&include_txes=false&limit=1&offset=1)
+- [https://classic.orphans.etccore.in/api/headers?orphan=1](https://classic.orphans.etccore.in/api/headers?orphan=1)
+- [https://classic.orphans.etccore.in/api/headers?orphan=1&include_txes=false](https://classic.orphans.etccore.in/api/headers?orphan=1&include_txes=false)
+- [https://classic.orphans.etccore.in/api/headers?orphan=1&include_txes=false&limit=1&offset=1](https://classic.orphans.etccore.in/api/headers?orphan=1&include_txes=false&limit=1&offset=1)
 - [https://classic.orphans.etccore.in/api/headers?raw_sql=SELECT * FROM headers WHERE number > 15537020 AND number < 15537055 AND orphan == true](https://classic.orphans.etccore.in/api/headers?raw_sql=SELECT%20*%20FROM%20headers%20WHERE%20number%20%3E%2015537020%20AND%20number%20%3C%2015537055%20AND%20orphan%20==%20true)
 
 ### Endpoints
@@ -106,7 +104,7 @@ Example response:
 
 This endpoint returns all stored block information, with any associated transactions nested. The default behavior will return all blocks and their transactions nested, and the blocks will be in descending order by number.
 
-__Kitchen Sink example:__ [https://classic.orphans.etccore.in/api/headers?limit=1&offset=1&orphan_only=true&include_txes=false](https://classic.orphans.etccore.in/api?limit=1&offset=1&orphan_only=true&include_txes=false)
+__Kitchen Sink example:__ [https://classic.orphans.etccore.in/api/headers?limit=1&offset=1&orphan=1&include_txes=false](https://classic.orphans.etccore.in/api?limit=1&offset=1&orphan=1&include_txes=false)
 
 ##### Query Parameters
   
@@ -127,8 +125,6 @@ __Kitchen Sink example:__ [https://classic.orphans.etccore.in/api/headers?limit=
   Live demo example: [https://classic.orphans.etccore.in/api/headers?raw_sql=SELECT * FROM headers WHERE number > 15537020 AND number < 15537055 AND orphan == true](https://classic.orphans.etccore.in/api?raw_sql=SELECT%20*%20FROM%20heads%20WHERE%20number%20%3E%2015537020%20AND%20number%20%3C%2015537055%20AND%20orphan%20==%20true)
 
   :warning: This query parameter precludes any other query parameters. Any other query parameters will be ignored.
-
-![image](https://user-images.githubusercontent.com/45600330/179065843-e8eec559-ba8a-415c-b24d-67d0bf49bfed.png)
 
 #### `/api/txes`
 
