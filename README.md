@@ -63,7 +63,8 @@ This endpoint returns `pong` if the server is running.
 
 This endpoint returns the current status of the server, including uptime and latest block.
 
-Example response:
+<details>
+<summary>Example</summary>
 
 ```json
 {
@@ -93,6 +94,8 @@ Example response:
     }
 }
 ```
+</details>
+
 
 #### `/api/headers` 
 
