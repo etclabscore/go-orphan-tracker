@@ -18,23 +18,26 @@
         <div class="ui-chain-id ">Chain ID <div id="status-chain-id" class="text-bold"></div></div>
         <div class="ui-uptime ">Tracker Uptime <div id="status-uptime" class="text-bold"></div></div>
     </div>
+      <div class="source">
+        <a href="https://github.com/etclabscore/go-orphan-tracker">github.com/etclabscore/go-orphan-tracker</a>
+      </div>
 <!--      <h1>Orphan Tracker</h1>-->
     </header>
     <main>
       <div class="mytable-wrapper">
-        <table id="mytable">
+        <table id="mytable" class="sortable">
+          <thead>
+            <tr id="table-head-row">
+              <th>Number</th>
+              <th>Timestamp</th>
+              <th>Miner</th>
+              <th>Hash</th>
+              <th>Uncle By</th>
+              <th>Gas Used</th>
+            </tr>
+          </thead>
           <tbody id="mytable-body">
-          <tr id="latest-block"></tr>
-          <tr id="table-head-row">
-            <th>Number</th>
-            <th>Timestamp</th>
-            <th>Miner</th>
-            <th>Hash</th>
-            <th>Uncle By</th>
-            <th>Gas Used</th>
-          </tr>
-
-
+            <tr id="latest-block"></tr>
           </tbody>
         </table>
 
@@ -45,7 +48,6 @@
       </div>
     </main>
     <footer>
-      Source:&nbsp;<a href="https://github.com/etclabscore/go-orphan-tracker">github.com/etclabscore/go-orphan-tracker</a>
     </footer>
   </div>
   <script src="./assets/scripts/bundle.js"></script>
