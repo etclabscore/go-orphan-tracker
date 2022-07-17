@@ -1,9 +1,8 @@
-go-orphan-tracker
+# go-orphan-tracker
 
-This program stores non-canonical block and transaction information in a simple relational database.
+This program stores information related to non-canonical blocks and transactions in a simple relational database.
 
-For all non-canonical blocks discovered (either as sidechained blocks; products of reorgs), or uncle blocks,
-the corresponding canonical block and its transactions are also queried and stored.
+For all non-canonical blocks discovered, the corresponding canonical block (by height) and its transactions is also queried and stored.
 
 ## Usage
 
