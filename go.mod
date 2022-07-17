@@ -1,4 +1,4 @@
-module github.com/meowsbits/go-orphan-tracker
+module github.com/etclabscore/go-orphan-tracker
 
 go 1.18
 
