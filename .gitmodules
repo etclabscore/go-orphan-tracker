@@ -1,0 +1,3 @@
+[submodule "cmd/orphan-tracker-ui"]
+	path = cmd/orphan-tracker-ui
+	url = https://github.com/etclabscore/orphan-tracker-ui.git

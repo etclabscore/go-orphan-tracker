@@ -599,7 +599,7 @@ func corsHeaderHandler(h http.Handler) http.Handler {
 	})
 }
 
-//go:embed web/*
+//go:embed orphan-tracker-ui/public/*
 var webContent embed.FS
 
 // startHttpServer is copy-pasted from https://stackoverflow.com/a/42533360.
@@ -609,7 +609,7 @@ func startHttpServer(wg *sync.WaitGroup, db *gorm.DB) *http.Server {
 
 	r := http.NewServeMux()
 
-	subFs, err := fs.Sub(webContent, "web")
+	subFs, err := fs.Sub(webContent, "orphan-tracker-ui/public")
 	if err != nil {
 		panic(err)
 	}
