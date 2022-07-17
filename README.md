@@ -18,7 +18,7 @@ go build -o ./build/bin/app .
 
 ```shell
 mkdir -p data
-./build/bin/app --db.path=./data/db.sqlite3 --rpc.target=ws://localhost:8546
+./build/bin/app --db.path=./data/sqlite3.db --rpc.target=ws://localhost:8546 --http.addr=:8080
 ```
 
 - `--db.path` is the path to the SQLite database file.
