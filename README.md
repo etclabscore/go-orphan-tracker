@@ -90,8 +90,6 @@ Example response:
 
 This endpoint returns all stored block information, with any associated transactions nested. The default behavior will return all blocks and their transactions nested, and the blocks will be in descending order by number.
 
-__Kitchen Sink example:__ [https://classic.orphans.etccore.in/api/headers?limit=1&offset=1&orphan=1&include_txes=false](https://classic.orphans.etccore.in/api?limit=1&offset=1&orphan=1&include_txes=false)
-
 ##### Query Parameters
   
 - `limit` This query parameter limits the number of blocks returned. Its value should be an integer. Default is `1000`.
