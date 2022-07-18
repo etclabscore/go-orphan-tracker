@@ -449,8 +449,14 @@ the canonical block which cites them (ie. the current head).
 					latestHead := appHeader(header)
 					latestHead.Orphan = false
 
-					log.Println("New head:", headerStr(latestHead))
+					// Overwrite any existing row by number with orphan=true.
+					// We ignore any error because we don't care if there are no matching entries in the db
+					// and this tx will be a noop.
+					db.Model(&Header{}).Where("number = ?", latestHead.Number).Update("orphan", true)
+
+					// Update the in-mem latest head value that's used for the server status.
 					statusLatestHead = latestHead
+					log.Println("New head:", headerStr(latestHead))
 
 					if header.UncleHash == types.EmptyUncleHash {
 						continue

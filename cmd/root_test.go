@@ -133,3 +133,57 @@ func TestHeadCreateOrUpdateWithTxes(t *testing.T) {
 		t.Fatal("Coinbase not properly saved", head2.Coinbase, outH2.Coinbase)
 	}
 }
+
+func TestOverwriteCanonHeader(t *testing.T) {
+	testDBPath := filepath.Join(os.TempDir(), "go-orphan-tracker-test-crud1.db")
+	os.Remove(testDBPath) // Clean up on re-run, but leave post-run for inspection.
+
+	t.Log(testDBPath)
+
+	db, err := gorm.Open(sqlite.Open(testDBPath), &gorm.Config{})
+	if err != nil {
+		log.Println(err)
+		os.Exit(1)
+	}
+	db.Debug() // I love verbosity.
+
+	if err := db.AutoMigrate(&Header{}, &Tx{}); err != nil {
+		log.Println(err)
+		os.Exit(1)
+	}
+
+	head1 := generateMockHead()
+	head2 := generateMockHead()
+
+	// Here we can alternately assign either
+	// - the same number to cause a conflict and try an effective update
+	// - or a different number to not have a conflict and cause the update to be a noop
+	head2.Number = head1.Number
+	// head2.Number = head1.Number + 1
+
+	if err := head1.CreateOrUpdate(db, "orphan"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := db.Model(&Header{}).Where("number = ?", head2.Number).Update("orphan", true).Error; err != nil {
+		t.Log("update error", err)
+	}
+
+	if err := head2.CreateOrUpdate(db, "orphan"); err != nil {
+		t.Fatal(err)
+	}
+
+	out := []*Header{}
+	err = db.Model(&Header{}).Find(&out).Error
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(out) != 2 {
+		t.Fatal("Did not properly update")
+	}
+
+	j, _ := json.MarshalIndent(out, "", "  ")
+	t.Log(string(j))
+
+}
