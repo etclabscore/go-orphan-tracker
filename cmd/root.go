@@ -417,6 +417,7 @@ the canonical block which cites them (ie. the current head).
 
 					// Sides
 					// --------------------------------------------------
+					// Any blocks that come through this channel should be stored.
 				case header := <-sideHeadCh:
 
 					sideHead := appHeader(header)
@@ -445,20 +446,36 @@ the canonical block which cites them (ie. the current head).
 
 					// Canons
 					// --------------------------------------------------
+					// Only some blocks that come through this channel should be stored.
+					// We want to store blocks that are RELATED, somehow, to orphan blocks.
+					// These relations can be as:
+					// - competitor blocks by height
+					// - uncling blocks, which include orphan references
 				case header := <-headCh:
 					latestHead := appHeader(header)
 					latestHead.Orphan = false
 
+					// Flag a conflict at the current head block.
+					// Any events resulting in a conflict will cause the block
+					// to be stored, just in case.
+					conflict := latestHead.Number == statusLatestHead.Number &&
+						latestHead.Hash != statusLatestHead.Hash
+					conflict = conflict || latestHead.Number < statusLatestHead.Number
+					conflict = conflict || latestHead.ParentHash != statusLatestHead.Hash
+
 					// Overwrite any existing row by number with orphan=true.
 					// We ignore any error because we don't care if there are no matching entries in the db
 					// and this tx will be a noop.
-					db.Model(&Header{}).Where("number = ?", latestHead.Number).Update("orphan", true)
+					db.Model(&Header{}).
+						Where("number = ?", latestHead.Number).
+						Where("hash != ?", latestHead.Hash).
+						Update("orphan", true)
 
 					// Update the in-mem latest head value that's used for the server status.
 					statusLatestHead = latestHead
 					log.Println("New head:", headerStr(latestHead))
 
-					if header.UncleHash == types.EmptyUncleHash {
+					if header.UncleHash == types.EmptyUncleHash && !conflict {
 						continue
 					}
 
