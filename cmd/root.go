@@ -130,6 +130,14 @@ type Header struct {
 	// UncleBy is the hash of the block/header listing this uncle as an uncle.
 	// If empty, it was not recorded as an uncle.
 	UncleBy string `json:"uncleBy"`
+
+	// Error describes any error that took place while fetching/filling/handling this header.
+	// Errors could be from fetching the block (to get the transactions), for example.
+	// We persist errors because it is most important to us that we store
+	// all block records. We should not abort saving if a non-critical errors occurrs
+	// along the way. Better to save a header without the transactions, but with the error,
+	// than to save no header at all.
+	Error string `json:"error"`
 }
 
 type Tx struct {
@@ -425,8 +433,9 @@ the canonical block which cites them (ie. the current head).
 
 					if err := fetchAndAssignTransactionsForHeader(sideHead); err != nil {
 						log.Println(err)
-						quitCh <- os.Interrupt
-						continue
+						sideHead.Error = fmt.Sprintf("<-sideHead/fetch txes,%v,%v", time.Now().Format(time.RFC3339), err.Error())
+						// quitCh <- os.Interrupt
+						// continue
 					}
 
 					log.Println("New side head:", headerStr(sideHead))
@@ -483,8 +492,9 @@ the canonical block which cites them (ie. the current head).
 					// since we name them with the uncleBy annotation for sometimes-sidechained headers.
 					if err := fetchAndAssignTransactionsForHeader(latestHead); err != nil {
 						log.Println(err)
-						quitCh <- os.Interrupt
-						continue
+						latestHead.Error = fmt.Sprintf("<-headCh/fetch txes,%v,%v", time.Now().Format(time.RFC3339), err.Error())
+						// quitCh <- os.Interrupt
+						// continue
 					}
 
 					// Allowing an update on the 'orphan' field ensures that, in the unlikely event
@@ -518,8 +528,9 @@ the canonical block which cites them (ie. the current head).
 
 						if err := fetchAndAssignTransactionsForHeader(uncleHead); err != nil {
 							log.Println(err)
-							quitCh <- os.Interrupt
-							continue
+							uncleHead.Error = fmt.Sprintf("uncle header/fetch txes,%v,%v", time.Now().Format(time.RFC3339), err.Error())
+							// quitCh <- os.Interrupt
+							// continue
 						}
 
 						log.Println("New uncle:", headerStr(uncleHead))
