@@ -366,20 +366,20 @@ the canonical block which cites them (ie. the current head).
 
 		// fetchAndAssignTransactionsForHeader will fetch the transactions for a given header and assign them
 		// to the struct pointer passed as an argument.
-		fetchAndAssignTransactionsForHeader := func(header *Header) error {
+		fetchAndAssignTransactionsForHeader := func(header *Header) (*types.Block, error) {
 			bl, err := client.BlockByHash(context.Background(), common.HexToHash(header.Hash))
 			if err != nil {
-				return err
+				return bl, err
 			}
 			header.Txes = []Tx{}
 			for _, tx := range bl.Transactions() {
 				tx, err := appTx(tx, bl.BaseFee())
 				if err != nil {
-					return err
+					return bl, err
 				}
 				header.Txes = append(header.Txes, tx)
 			}
-			return nil
+			return bl, nil
 		}
 
 		// fetchAndStoreCanonicalHeader is a convenience function to fetch and store a canonical header.
@@ -395,7 +395,7 @@ the canonical block which cites them (ie. the current head).
 
 			canonHead := appHeader(canonBlock.Header())
 
-			if err := fetchAndAssignTransactionsForHeader(canonHead); err != nil {
+			if _, err := fetchAndAssignTransactionsForHeader(canonHead); err != nil {
 				return err
 			}
 
@@ -437,7 +437,7 @@ the canonical block which cites them (ie. the current head).
 					sideHead := appHeader(header)
 					sideHead.Orphan = true
 
-					if err := fetchAndAssignTransactionsForHeader(sideHead); err != nil {
+					if _, err := fetchAndAssignTransactionsForHeader(sideHead); err != nil {
 						log.Println(err)
 						sideHead.Error = fmt.Sprintf("<-sideHead/fetch txes,%v,%v", time.Now().Format(time.RFC3339), err.Error())
 						// quitCh <- os.Interrupt
@@ -498,7 +498,8 @@ the canonical block which cites them (ie. the current head).
 
 					// Let's keep a copy of all blocks that include uncles as well,
 					// since we name them with the uncleBy annotation for sometimes-sidechained headers.
-					if err := fetchAndAssignTransactionsForHeader(latestHead); err != nil {
+					bl, err := fetchAndAssignTransactionsForHeader(latestHead)
+					if err != nil {
 						log.Println(err)
 						latestHead.Error = fmt.Sprintf("<-headCh/fetch txes,%v,%v", time.Now().Format(time.RFC3339), err.Error())
 						// quitCh <- os.Interrupt
@@ -514,15 +515,6 @@ the canonical block which cites them (ie. the current head).
 						continue
 					}
 
-					// The new head has uncles.
-					// First we have to get the block to get the uncles.
-					bl, err := client.BlockByHash(context.Background(), header.Hash())
-					if err != nil {
-						log.Println(err)
-						quitCh <- os.Interrupt
-						return
-					}
-
 					for _, uncle := range bl.Uncles() {
 
 						uncleHead := appHeader(uncle)
@@ -534,7 +526,7 @@ the canonical block which cites them (ie. the current head).
 						// All uncles are orphans. Consensus rule.
 						uncleHead.Orphan = true
 
-						if err := fetchAndAssignTransactionsForHeader(uncleHead); err != nil {
+						if _, err := fetchAndAssignTransactionsForHeader(uncleHead); err != nil {
 							log.Println(err)
 							uncleHead.Error = fmt.Sprintf("uncle header/fetch txes,%v,%v", time.Now().Format(time.RFC3339), err.Error())
 							// quitCh <- os.Interrupt
