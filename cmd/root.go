@@ -344,19 +344,25 @@ the canonical block which cites them (ie. the current head).
 		interruptCh := make(chan os.Signal, 1)
 		signal.Notify(interruptCh, os.Interrupt, os.Kill)
 
-		sideHeadCh := make(chan *types.Header)
+		sideHeadCh := make(chan *types.Header, 10_000)
 		sideSub, err := client.SubscribeNewSideHead(context.Background(), sideHeadCh)
 		if err != nil {
 			log.Println(err)
 			os.Exit(1)
 		}
 
-		headCh := make(chan *types.Header)
+		headCh := make(chan *types.Header, 10_000)
 		headSub, err := client.SubscribeNewHead(context.Background(), headCh)
 		if err != nil {
 			log.Println(err)
 			os.Exit(1)
 		}
+
+		// trailCh will be our channel to signal events
+		// for a process that trails the current latest block by
+		// some constant height.
+		trailerCh := make(chan *types.Header, 10_000)
+		const trailHeight = uint64(10)
 
 		// fetchAndAssignTransactionsForHeader will fetch the transactions for a given header and assign them
 		// to the struct pointer passed as an argument.
@@ -461,6 +467,8 @@ the canonical block which cites them (ie. the current head).
 					// - competitor blocks by height
 					// - uncling blocks, which include orphan references
 				case header := <-headCh:
+					trailerCh <- header // Fire this new header off to the trailer channel.
+
 					latestHead := appHeader(header)
 					latestHead.Orphan = false
 
@@ -548,6 +556,47 @@ the canonical block which cites them (ie. the current head).
 							quitCh <- os.Interrupt
 							return
 						}
+					}
+
+					// Trailer
+					// --------------------------------------------------
+				case header := <-trailerCh:
+					trailerHeight := header.Number.Uint64() - trailHeight
+
+					storedHeaders := []*Header{}
+					if err := db.Model(&Header{}).
+						Where("number = ?", trailerHeight).
+						Find(&storedHeaders).Error; err != nil && err != gorm.ErrRecordNotFound {
+						log.Println(err)
+						quitCh <- os.Interrupt
+						return
+					} else if err == gorm.ErrRecordNotFound {
+						continue // Noop. We have no stored block data for this height.
+					}
+
+					countCanonical := 0
+					for _, header := range storedHeaders {
+						if !header.Orphan {
+							countCanonical++
+						}
+					}
+					if countCanonical > 1 {
+						// Fetch the canonical block by height.
+						canonBlock, err := client.BlockByNumber(context.Background(), big.NewInt(int64(trailHeight)))
+						if err != nil {
+							log.Println(err)
+							quitCh <- os.Interrupt
+							return
+						}
+
+						db.Model(&Header{}).
+							Where("number = ?", trailerHeight).
+							Where("hash != ?", canonBlock.Hash().Hex()).
+							Update("orphan", true)
+
+						db.Model(&Header{}).
+							Where("hash = ?", canonBlock.Hash().Hex()).
+							Update("orphan", false)
 					}
 				}
 			}
