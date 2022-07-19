@@ -30,9 +30,11 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -130,6 +132,11 @@ type Header struct {
 	// UncleBy is the hash of the block/header listing this uncle as an uncle.
 	// If empty, it was not recorded as an uncle.
 	UncleBy string `json:"uncleBy"`
+
+	// Uncle1 and Uncle2 are optionally filled fields.
+	// The Ethereum protocol only allows blocks to cite 2 uncles at most.
+	Uncle1 string `json:"uncle1,omitempty"`
+	Uncle2 string `json:"uncle2,omitempty"`
 
 	// Error describes any error that took place while fetching/filling/handling this header.
 	// Errors could be from fetching the block (to get the transactions), for example.
@@ -262,6 +269,18 @@ func appTx(tx *types.Transaction, baseFee *big.Int) (Tx, error) {
 	}, nil
 }
 
+func blockTxes2AppTxes(blTxes []*types.Transaction, blBaseFee *big.Int) ([]Tx, error) {
+	headerTxes := []Tx{}
+	for _, tx := range blTxes {
+		tx, err := appTx(tx, blBaseFee)
+		if err != nil {
+			return headerTxes, err
+		}
+		headerTxes = append(headerTxes, tx)
+	}
+	return headerTxes, nil
+}
+
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "go-orphan-tracker",
@@ -344,15 +363,28 @@ the canonical block which cites them (ie. the current head).
 		interruptCh := make(chan os.Signal, 1)
 		signal.Notify(interruptCh, os.Interrupt, os.Kill)
 
-		sideHeadCh := make(chan *types.Header, 10_000)
-		sideSub, err := client.SubscribeNewSideHead(context.Background(), sideHeadCh)
+		var sideSub, headSub ethereum.Subscription
+		sideHeadCh, headCh := make(chan *types.Header, 10_000), make(chan *types.Header, 10_000)
+
+		setupClientSubsctription := func(sub string) (err error) {
+			switch sub {
+			case "head":
+				headSub, err = client.SubscribeNewHead(context.Background(), headCh)
+			case "side":
+				sideSub, err = client.SubscribeNewSideHead(context.Background(), sideHeadCh)
+			default:
+				panic("Unknown subscription type")
+			}
+			return err
+		}
+
+		err = setupClientSubsctription("side")
 		if err != nil {
 			log.Println(err)
 			os.Exit(1)
 		}
 
-		headCh := make(chan *types.Header, 10_000)
-		headSub, err := client.SubscribeNewHead(context.Background(), headCh)
+		err = setupClientSubsctription("head")
 		if err != nil {
 			log.Println(err)
 			os.Exit(1)
@@ -364,20 +396,25 @@ the canonical block which cites them (ie. the current head).
 		trailerCh := make(chan *types.Header, 10_000)
 		const trailHeight = uint64(10)
 
-		// fetchAndAssignTransactionsForHeader will fetch the transactions for a given header and assign them
+		// fetchBlockFillingFields will fetch the transactions for a given header and assign them
 		// to the struct pointer passed as an argument.
-		fetchAndAssignTransactionsForHeader := func(header *Header) (*types.Block, error) {
+		fetchBlockFillingFields := func(header *Header) (*types.Block, error) {
 			bl, err := client.BlockByHash(context.Background(), common.HexToHash(header.Hash))
 			if err != nil {
 				return bl, err
 			}
-			header.Txes = []Tx{}
-			for _, tx := range bl.Transactions() {
-				tx, err := appTx(tx, bl.BaseFee())
-				if err != nil {
-					return bl, err
+
+			header.Txes, err = blockTxes2AppTxes(bl.Transactions(), bl.BaseFee())
+			if err != nil {
+				return bl, err
+			}
+
+			for i, uncle := range bl.Uncles() {
+				if i == 0 {
+					header.Uncle1 = uncle.Hash().Hex()
+				} else {
+					header.Uncle2 = uncle.Hash().Hex()
 				}
-				header.Txes = append(header.Txes, tx)
 			}
 			return bl, nil
 		}
@@ -395,7 +432,7 @@ the canonical block which cites them (ie. the current head).
 
 			canonHead := appHeader(canonBlock.Header())
 
-			if _, err := fetchAndAssignTransactionsForHeader(canonHead); err != nil {
+			if _, err := fetchBlockFillingFields(canonHead); err != nil {
 				return err
 			}
 
@@ -421,11 +458,29 @@ the canonical block which cites them (ie. the current head).
 					// --------------------------------------------------
 				case err := <-sideSub.Err():
 					log.Println(err)
+					if strings.Contains(strings.ToLower(err.Error()), "connection") {
+						subErr := setupClientSubsctription("side")
+						if subErr != nil {
+							log.Println(subErr)
+							quitCh <- os.Interrupt
+							return
+						}
+						continue
+					}
 					quitCh <- os.Interrupt
 					return
 
 				case err := <-headSub.Err():
 					log.Println(err)
+					if strings.Contains(strings.ToLower(err.Error()), "connection") {
+						subErr := setupClientSubsctription("head")
+						if subErr != nil {
+							log.Println(subErr)
+							quitCh <- os.Interrupt
+							return
+						}
+						continue
+					}
 					quitCh <- os.Interrupt
 					return
 
@@ -437,7 +492,8 @@ the canonical block which cites them (ie. the current head).
 					sideHead := appHeader(header)
 					sideHead.Orphan = true
 
-					if _, err := fetchAndAssignTransactionsForHeader(sideHead); err != nil {
+					bl, err := fetchBlockFillingFields(sideHead)
+					if err != nil {
 						log.Println(err)
 						sideHead.Error = fmt.Sprintf("<-sideHead/fetch txes,%v,%v", time.Now().Format(time.RFC3339), err.Error())
 						// quitCh <- os.Interrupt
@@ -450,6 +506,24 @@ the canonical block which cites them (ie. the current head).
 						log.Println(err)
 						quitCh <- os.Interrupt
 						return
+					}
+
+					for _, uncle := range bl.Uncles() {
+						uncleAppHeader := appHeader(uncle)
+						uncleAppHeader.Orphan = true
+						uncleAppHeader.UncleBy = sideHead.Hash
+
+						_, err := fetchBlockFillingFields(uncleAppHeader)
+						if err != nil {
+							log.Println(err)
+							uncleAppHeader.Error = fmt.Sprintf("<-sideHead/fetch uncle,%v,%v", time.Now().Format(time.RFC3339), err.Error())
+						}
+
+						if err := uncleAppHeader.CreateOrUpdate(db, "uncle_by", "orphan"); err != nil {
+							log.Println(err)
+							quitCh <- os.Interrupt
+							return
+						}
 					}
 
 					// Now query and store the block by number to get the canonical block.
@@ -498,7 +572,7 @@ the canonical block which cites them (ie. the current head).
 
 					// Let's keep a copy of all blocks that include uncles as well,
 					// since we name them with the uncleBy annotation for sometimes-sidechained headers.
-					bl, err := fetchAndAssignTransactionsForHeader(latestHead)
+					bl, err := fetchBlockFillingFields(latestHead)
 					if err != nil {
 						log.Println(err)
 						latestHead.Error = fmt.Sprintf("<-headCh/fetch txes,%v,%v", time.Now().Format(time.RFC3339), err.Error())
@@ -526,7 +600,7 @@ the canonical block which cites them (ie. the current head).
 						// All uncles are orphans. Consensus rule.
 						uncleHead.Orphan = true
 
-						if _, err := fetchAndAssignTransactionsForHeader(uncleHead); err != nil {
+						if _, err := fetchBlockFillingFields(uncleHead); err != nil {
 							log.Println(err)
 							uncleHead.Error = fmt.Sprintf("uncle header/fetch txes,%v,%v", time.Now().Format(time.RFC3339), err.Error())
 							// quitCh <- os.Interrupt
