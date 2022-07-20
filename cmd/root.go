@@ -285,16 +285,56 @@ func blockTxes2AppTxes(blTxes []*types.Transaction, blBaseFee *big.Int) ([]Tx, e
 	return headerTxes, nil
 }
 
-func handleHeader(db *gorm.DB, tHeader *types.Header, isOrphan *bool, uncleBy *string) (*Header, error) {
+func handleHeader(client *ethclient.Client, db *gorm.DB, tHeader *types.Header, isOrphan bool, uncleBy string) (*Header, error) {
 	header := appHeader(tHeader)
 
-	if isOrphan != nil {
-		header.Orphan = *isOrphan
-	}
-	if uncleBy != nil {
-		header.UncleBy = *uncleBy
+	header.Orphan = isOrphan
+	header.UncleBy = uncleBy
+
+	bl, err := client.BlockByHash(context.Background(), common.HexToHash(header.Hash))
+	if err != nil {
+		return nil, err
 	}
 
+	// Hold the queried block in mem just in case.
+	header.Block = bl
+
+	header.Txes, err = blockTxes2AppTxes(bl.Transactions(), bl.BaseFee())
+	if err != nil {
+		return header, err
+	}
+
+	for i, uncle := range bl.Uncles() {
+		if i == 0 {
+			header.Uncle1 = uncle.Hash().Hex()
+		} else {
+			header.Uncle2 = uncle.Hash().Hex()
+		}
+		if _, err := handleHeader(client, db, uncle, true, header.Hash); err != nil {
+			return nil, err
+		}
+	}
+
+	assignCols := []string{"orphan"}
+	if uncleBy != "" {
+		assignCols = append(assignCols, "uncle_by")
+	}
+
+	err = header.CreateOrUpdate(db, assignCols...)
+	if err != nil {
+		return nil, err
+	}
+
+	// This is a canonical block.
+	// Any other blocks at this height are orphans.
+	if !isOrphan {
+		db.Model(&Header{}).
+			Where("number = ?", header.Number).
+			Where("hash != ?", header.Hash).
+			Update("orphan", true)
+	}
+
+	return header, nil
 }
 
 // rootCmd represents the base command when called without any subcommands
@@ -412,52 +452,6 @@ the canonical block which cites them (ie. the current head).
 		trailerCh := make(chan *types.Header, 10_000)
 		const trailHeight = uint64(10)
 
-		// fetchBlockFillingFields will fetch the transactions for a given header and assign them
-		// to the struct pointer passed as an argument.
-		fetchBlockFillingFields := func(header *Header) (*types.Block, error) {
-			bl, err := client.BlockByHash(context.Background(), common.HexToHash(header.Hash))
-			if err != nil {
-				return bl, err
-			}
-
-			header.Txes, err = blockTxes2AppTxes(bl.Transactions(), bl.BaseFee())
-			if err != nil {
-				return bl, err
-			}
-
-			for i, uncle := range bl.Uncles() {
-				if i == 0 {
-					header.Uncle1 = uncle.Hash().Hex()
-				} else {
-					header.Uncle2 = uncle.Hash().Hex()
-				}
-			}
-			return bl, nil
-		}
-
-		// fetchAndStoreCanonicalHeader is a convenience function to fetch and store a canonical header.
-		// This is used for both side blocks and uncle blocks, because
-		// we always want to keep records of corresponding canonical blocks for both orphans and uncles.
-		fetchAndStoreCanonicalHeader := func(number *big.Int) error {
-			// Now query and store the block by number to get the canonical headers corresponding to
-			// this uncle by height.
-			canonBlock, err := client.BlockByNumber(context.Background(), number)
-			if err != nil {
-				return err
-			}
-
-			canonHead := appHeader(canonBlock.Header())
-
-			if _, err := fetchBlockFillingFields(canonHead); err != nil {
-				return err
-			}
-
-			if err := canonHead.CreateOrUpdate(db, "orphan"); err != nil {
-				return err
-			}
-			return nil
-		}
-
 		// Run the main loop.
 		// --------------------------------------------------
 		go func() {
@@ -505,45 +499,25 @@ the canonical block which cites them (ie. the current head).
 					// Any blocks that come through this channel should be stored.
 				case header := <-sideHeadCh:
 
-					sideHead := appHeader(header)
-					sideHead.Orphan = true
-
-					bl, err := fetchBlockFillingFields(sideHead)
+					sideHead, err := handleHeader(client, db, header, true, "")
 					if err != nil {
 						log.Println(err)
-						sideHead.Error = fmt.Sprintf("<-sideHead/fetch txes,%v,%v", time.Now().Format(time.RFC3339), err.Error())
-						// quitCh <- os.Interrupt
-						// continue
+						quitCh <- os.Interrupt
+						return
 					}
-
 					log.Println("New side head:", headerStr(sideHead))
 
-					if err := sideHead.CreateOrUpdate(db, "orphan"); err != nil {
+					// Now query and store the block by number to get the canonical headers corresponding to
+					// this uncle by height.
+					canonBlock, err := client.BlockByNumber(context.Background(), header.Number)
+					if err != nil {
 						log.Println(err)
 						quitCh <- os.Interrupt
 						return
 					}
 
-					for _, uncle := range bl.Uncles() {
-						uncleAppHeader := appHeader(uncle)
-						uncleAppHeader.Orphan = true
-						uncleAppHeader.UncleBy = sideHead.Hash
-
-						_, err := fetchBlockFillingFields(uncleAppHeader)
-						if err != nil {
-							log.Println(err)
-							uncleAppHeader.Error = fmt.Sprintf("<-sideHead/fetch uncle,%v,%v", time.Now().Format(time.RFC3339), err.Error())
-						}
-
-						if err := uncleAppHeader.CreateOrUpdate(db, "uncle_by", "orphan"); err != nil {
-							log.Println(err)
-							quitCh <- os.Interrupt
-							return
-						}
-					}
-
-					// Now query and store the block by number to get the canonical block.
-					if err := fetchAndStoreCanonicalHeader(header.Number); err != nil {
+					_, err = handleHeader(client, db, canonBlock.Header(), false, "")
+					if err != nil {
 						log.Println(err)
 						quitCh <- os.Interrupt
 						return
@@ -557,10 +531,16 @@ the canonical block which cites them (ie. the current head).
 					// - competitor blocks by height
 					// - uncling blocks, which include orphan references
 				case header := <-headCh:
-					trailerCh <- header // Fire this new header off to the trailer channel.
 
 					latestHead := appHeader(header)
-					latestHead.Orphan = false
+
+					// Overwrite any existing row by number with orphan=true.
+					// We ignore any error because we don't care if there are no matching entries in the db
+					// and this tx will be a noop.
+					db.Model(&Header{}).
+						Where("number = ?", header.Number.Uint64()).
+						Where("hash != ?", header.Hash().Hex()).
+						Update("orphan", true)
 
 					// Flag a conflict at the current head block.
 					// Any events resulting in a conflict will cause the block
@@ -570,13 +550,8 @@ the canonical block which cites them (ie. the current head).
 					conflict = conflict || latestHead.Number < statusLatestHead.Number
 					conflict = conflict || latestHead.ParentHash != statusLatestHead.Hash
 
-					// Overwrite any existing row by number with orphan=true.
-					// We ignore any error because we don't care if there are no matching entries in the db
-					// and this tx will be a noop.
-					db.Model(&Header{}).
-						Where("number = ?", latestHead.Number).
-						Where("hash != ?", latestHead.Hash).
-						Update("orphan", true)
+					// Fire this new header off to the trailer channel.
+					trailerCh <- header
 
 					// Update the in-mem latest head value that's used for the server status.
 					statusLatestHead = latestHead
@@ -586,58 +561,11 @@ the canonical block which cites them (ie. the current head).
 						continue
 					}
 
-					// Let's keep a copy of all blocks that include uncles as well,
-					// since we name them with the uncleBy annotation for sometimes-sidechained headers.
-					bl, err := fetchBlockFillingFields(latestHead)
+					_, err = handleHeader(client, db, header, false, "")
 					if err != nil {
 						log.Println(err)
-						latestHead.Error = fmt.Sprintf("<-headCh/fetch txes,%v,%v", time.Now().Format(time.RFC3339), err.Error())
-						// quitCh <- os.Interrupt
-						// continue
-					}
-
-					// Allowing an update on the 'orphan' field ensures that, in the unlikely event
-					// that this header was once on the sidechain, it will now be updated in the store
-					// as canonical (orphan=false), which all blocks that come through this subscription will be.
-					if err := latestHead.CreateOrUpdate(db, "orphan"); err != nil {
-						log.Println(err)
 						quitCh <- os.Interrupt
-						continue
-					}
-
-					for _, uncle := range bl.Uncles() {
-
-						uncleHead := appHeader(uncle)
-
-						// The UncleBy field references which block cited this uncle we're looking at now.
-						// Here, the block doing the citing is the latest head block.
-						uncleHead.UncleBy = bl.Hash().Hex()
-
-						// All uncles are orphans. Consensus rule.
-						uncleHead.Orphan = true
-
-						if _, err := fetchBlockFillingFields(uncleHead); err != nil {
-							log.Println(err)
-							uncleHead.Error = fmt.Sprintf("uncle header/fetch txes,%v,%v", time.Now().Format(time.RFC3339), err.Error())
-							// quitCh <- os.Interrupt
-							// continue
-						}
-
-						log.Println("New uncle:", headerStr(uncleHead))
-
-						if err := uncleHead.CreateOrUpdate(db, "uncle_by", "orphan"); err != nil {
-							log.Println(err)
-							quitCh <- os.Interrupt
-							return
-						}
-
-						// Now query and store the block by number to get the canonical headers corresponding to
-						// this uncle by height.
-						if err := fetchAndStoreCanonicalHeader(uncle.Number); err != nil {
-							log.Println(err)
-							quitCh <- os.Interrupt
-							return
-						}
+						return
 					}
 
 					// Trailer
@@ -652,7 +580,7 @@ the canonical block which cites them (ie. the current head).
 						log.Println(err)
 						quitCh <- os.Interrupt
 						return
-					} else if err == gorm.ErrRecordNotFound {
+					} else if err == gorm.ErrRecordNotFound || len(storedHeaders) == 0 {
 						continue // Noop. We have no stored block data for this height.
 					}
 
@@ -662,7 +590,7 @@ the canonical block which cites them (ie. the current head).
 							countCanonical++
 						}
 					}
-					if countCanonical > 1 {
+					if countCanonical < 1 || countCanonical > 1 {
 						// Fetch the canonical block by height.
 						canonBlock, err := client.BlockByNumber(context.Background(), big.NewInt(int64(trailHeight)))
 						if err != nil {
@@ -671,14 +599,12 @@ the canonical block which cites them (ie. the current head).
 							return
 						}
 
-						db.Model(&Header{}).
-							Where("number = ?", trailerHeight).
-							Where("hash != ?", canonBlock.Hash().Hex()).
-							Update("orphan", true)
-
-						db.Model(&Header{}).
-							Where("hash = ?", canonBlock.Hash().Hex()).
-							Update("orphan", false)
+						_, err = handleHeader(client, db, canonBlock.Header(), false, "")
+						if err != nil {
+							log.Println(err)
+							quitCh <- os.Interrupt
+							return
+						}
 					}
 				}
 			}
