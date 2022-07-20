@@ -85,6 +85,10 @@ type Header struct {
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 
+	// Block is a pointer to the block this header belongs to.
+	// We'll need to this from the server.
+	Block *types.Block `json:"-" gorm:"-"`
+
 	// Hash is the SAME VALUE as Header.Hash(), but we get to tell gorm that it must be unique.
 	Hash string `gorm:"unique;index;primaryKey;" json:"hash"`
 
@@ -126,17 +130,17 @@ type Header struct {
 	Nonce       string `json:"nonce"`
 	BaseFee     string `json:"baseFeePerGas,omitempty"` // BaseFee was added by EIP-1559 and is ignored in legacy headers.
 
+	// Uncle1 and Uncle2 are optionally filled fields.
+	// The Ethereum protocol only allows blocks to cite 2 uncles at most.
+	Uncle1 string `json:"uncle1,omitempty"`
+	Uncle2 string `json:"uncle2,omitempty"`
+
 	// Orphan is a flag indicating whether this header is an orphan.
 	Orphan bool `gorm:"default:false" json:"orphan"`
 
 	// UncleBy is the hash of the block/header listing this uncle as an uncle.
 	// If empty, it was not recorded as an uncle.
 	UncleBy string `json:"uncleBy"`
-
-	// Uncle1 and Uncle2 are optionally filled fields.
-	// The Ethereum protocol only allows blocks to cite 2 uncles at most.
-	Uncle1 string `json:"uncle1,omitempty"`
-	Uncle2 string `json:"uncle2,omitempty"`
 
 	// Error describes any error that took place while fetching/filling/handling this header.
 	// Errors could be from fetching the block (to get the transactions), for example.
@@ -279,6 +283,18 @@ func blockTxes2AppTxes(blTxes []*types.Transaction, blBaseFee *big.Int) ([]Tx, e
 		headerTxes = append(headerTxes, tx)
 	}
 	return headerTxes, nil
+}
+
+func handleHeader(db *gorm.DB, tHeader *types.Header, isOrphan *bool, uncleBy *string) (*Header, error) {
+	header := appHeader(tHeader)
+
+	if isOrphan != nil {
+		header.Orphan = *isOrphan
+	}
+	if uncleBy != nil {
+		header.UncleBy = *uncleBy
+	}
+
 }
 
 // rootCmd represents the base command when called without any subcommands
