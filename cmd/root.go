@@ -574,13 +574,16 @@ the canonical block which cites them (ie. the current head).
 					trailerHeight := header.Number.Uint64() - trailHeight
 
 					storedHeaders := []*Header{}
-					if err := db.Model(&Header{}).
+					err := db.Model(&Header{}).
 						Where("number = ?", trailerHeight).
-						Find(&storedHeaders).Error; err != nil && err != gorm.ErrRecordNotFound {
+						Find(&storedHeaders).Error
+
+					if err != nil && err != gorm.ErrRecordNotFound {
 						log.Println(err)
 						quitCh <- os.Interrupt
 						return
-					} else if err == gorm.ErrRecordNotFound || len(storedHeaders) == 0 {
+					}
+					if err == gorm.ErrRecordNotFound || len(storedHeaders) == 0 {
 						continue // Noop. We have no stored block data for this height.
 					}
 
